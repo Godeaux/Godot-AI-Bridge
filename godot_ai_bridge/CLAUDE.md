@@ -28,13 +28,21 @@ Every decision you make should come from what you see in the screenshot and read
 
 ### Editor Tools (`godot_*`) — always available when Godot editor is open
 Edit scenes, scripts, and project files. Control the Godot Editor itself.
-Includes scene tree manipulation, script read/write, node CRUD (add, remove, duplicate, reparent),
-property inspection, project search, and run control.
+- **Scene/node operations**: add, remove, rename, duplicate, reparent, instance scenes, find nodes by name/type/group
+- **Properties**: get, set, list all editable properties with type info
+- **Scripts**: read, write, create from template, check for errors, read debugger output
+- **Project**: browse structure, search files, read settings, input map, autoloads
+- **Run control**: start/stop the game
+- **Editor screenshots**: capture the viewport (2D/3D canvas) or full editor window (with all docks)
 
 ### Runtime Tools (`game_*`) — only when game is running
 Interact with the actual running game. Take snapshots, inject input, read state.
-Includes pause/resume, time scale control, snapshot diffing, console output,
-scene history, and per-node detailed state inspection.
+- **Observation**: snapshots (node tree + screenshot), standalone screenshots, node-cropped screenshots
+- **Input**: click, click node, key press, action trigger, mouse move, multi-step sequences
+- **State**: detailed node inspection, method calls
+- **Waiting**: wait N seconds, wait for conditions (property equals, node exists, signal)
+- **Control**: pause/resume, time scale
+- **Diagnostics**: console output, snapshot diffs, scene change history
 
 ## Core Workflow
 
@@ -73,6 +81,9 @@ The key insight: **you are looking at a screenshot of a real game and deciding w
 - **Use `game_pause` + `game_snapshot`** for freeze-frame debugging — pause, inspect, resume.
 - **Use `game_set_timescale(0.2)`** for slow-motion to observe fast gameplay in detail.
 - **Use `game_console_output`** to check for errors, warnings, and print() debug output during gameplay.
+- **Use `godot_editor_screenshot`** to see the editor state — use `mode="viewport"` for the 2D/3D canvas, `mode="full"` for the entire editor window with all docks and inspector.
+- **Use `godot_find_nodes`** to search the scene tree by name, type, or group instead of manually walking the tree.
+- **Use `godot_instance_scene`** to add .tscn files as children — this is how you compose scenes (add a player.tscn to a level, enemy.tscn instances, UI components, etc.).
 
 ## Reading Snapshots
 
@@ -84,6 +95,18 @@ Each node in a snapshot has:
 - `text` — for UI elements (Labels, Buttons) — read these to understand what's on screen
 - `properties` — exported script variables (health, speed, score, etc.) — the game's actual state
 - `groups` — group memberships (useful for understanding what a node represents)
+
+## Advanced: Editor Screenshots
+
+Use `godot_editor_screenshot` to visually verify your edits without running the game:
+
+```
+1. godot_add_node(".", "Sprite2D", "Player", {"position": [400, 300]})
+2. godot_editor_screenshot(mode="viewport")     →  See the 2D canvas — is the sprite placed correctly?
+3. godot_editor_screenshot(mode="full")          →  See the full editor — check inspector, scene tree dock
+```
+
+Use `mode="viewport"` most of the time (node placement, visual layout). Use `mode="full"` when you need to see the inspector panel, scene tree dock, or other editor UI.
 
 ## Advanced: Pause-and-Inspect Debugging
 
@@ -119,6 +142,18 @@ Use `game_snapshot_diff` instead of comparing full snapshots manually:
 4. game_snapshot_diff()            →  Shows exactly what changed:
    → nodes_changed: {"Player": {"global_position": {"from": [100, 400], "to": [100, 250]}}}
    → properties: {"score": {"from": 0, "to": 100}}
+```
+
+## Advanced: Scene Composition
+
+Use `godot_instance_scene` and `godot_find_nodes` to build complex scenes:
+
+```
+1. godot_instance_scene("res://scenes/player.tscn", ".")          →  Add player to level
+2. godot_instance_scene("res://scenes/enemy.tscn", "Enemies")     →  Add enemy under Enemies node
+3. godot_find_nodes(type="CharacterBody2D")                        →  Find all character bodies
+4. godot_find_nodes(name="Enemy*", group="enemies")                →  Find enemies by name + group
+5. godot_rename_node("Enemies/Enemy", "Goblin")                    →  Rename for clarity
 ```
 
 ## Example: Playing a Platformer
@@ -186,4 +221,17 @@ Use `game_snapshot_diff` instead of comparing full snapshots manually:
 6. godot_run_game()
 7. game_snapshot()
    → Player is now standing correctly on the floor. Position.y = 468. Looks good.
+```
+
+## Example: Building a Scene
+
+```
+1. godot_create_scene("Node2D", "res://scenes/level_2.tscn")
+2. godot_open_scene("res://scenes/level_2.tscn")
+3. godot_instance_scene("res://scenes/player.tscn", ".")
+4. godot_add_node(".", "StaticBody2D", "Ground")
+5. godot_add_node("Ground", "CollisionShape2D", "GroundCollision")
+6. godot_find_nodes(type="StaticBody2D")  →  Verify the ground node exists
+7. godot_editor_screenshot(mode="viewport")  →  Check the visual layout
+8. godot_save_scene()
 ```

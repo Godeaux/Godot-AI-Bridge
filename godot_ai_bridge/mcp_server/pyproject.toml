@@ -1,6 +1,6 @@
 [project]
 name = "godot-ai-bridge-mcp"
-version = "0.1.0"
+version = "1.0.0"
 description = "MCP server for Godot AI Bridge — gives AI agents full control over Godot editor and running games"
 requires-python = ">=3.10"
 dependencies = [
