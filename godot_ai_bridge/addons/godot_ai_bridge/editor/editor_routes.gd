@@ -233,8 +233,9 @@ func handle_is_running(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 # --- Editor Screenshot ---
 
-## GET /screenshot
+## GET /screenshot — mode=viewport (just 2D/3D canvas) or mode=full (entire editor window)
 func handle_screenshot(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 	var width: int = int(request.query_params.get("width", str(BridgeConfig.DEFAULT_SCREENSHOT_WIDTH)))
 	var height: int = int(request.query_params.get("height", str(BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT)))
-	return EditorScreenshot.capture(width, height)
+	var mode: String = request.query_params.get("mode", "viewport")
+	return EditorScreenshot.capture(width, height, mode)

@@ -316,21 +316,36 @@ def register_editor_tools(mcp: FastMCP) -> None:
     # --- Editor Screenshot ---
 
     @mcp.tool
-    async def godot_editor_screenshot(width: int = 960, height: int = 540) -> list[Any]:
-        """Capture a screenshot of the Godot editor viewport.
+    async def godot_editor_screenshot(
+        mode: str = "viewport",
+        width: int = 960,
+        height: int = 540,
+    ) -> list[Any]:
+        """Capture a screenshot of the Godot editor.
 
-        Use this to see the current state of the editor, verify scene changes,
-        check node placement, and evaluate the visual state of your edits.
+        Two modes are available:
+        - "viewport": Just the 2D/3D main canvas — what you'd look at to check node
+          placement, visual layout, and scene composition. Use this most of the time.
+        - "full": The entire editor window including all docks (Scene tree, Inspector,
+          FileSystem, bottom panel). Use this when you need to see the inspector values,
+          the scene hierarchy, or the overall editor layout.
 
         Args:
+            mode: "viewport" for the 2D/3D canvas only, "full" for the entire editor window.
             width: Screenshot width in pixels (default 960).
             height: Screenshot height in pixels (default 540).
         """
-        data = await editor.get("/screenshot", {"width": str(width), "height": str(height)})
+        data = await editor.get("/screenshot", {
+            "width": str(width),
+            "height": str(height),
+            "mode": mode,
+        })
         if "error" in data:
             return [data["error"]]
 
+        actual_mode = data.get("mode", mode)
+        mode_label = "viewport" if actual_mode == "viewport" else "full editor"
         return [
-            f"Editor screenshot ({data['size'][0]}x{data['size'][1]})",
+            f"📸 Editor screenshot — {mode_label} ({data['size'][0]}x{data['size'][1]})",
             _b64_image(data["image"]),
         ]
