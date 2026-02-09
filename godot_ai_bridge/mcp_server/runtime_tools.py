@@ -7,10 +7,16 @@ Only available when the game is running.
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 from fastmcp import FastMCP, Image
 from client import runtime
+
+
+def _b64_image(b64_data: str) -> Image:
+    """Decode a base64 PNG string from Godot into a FastMCP Image."""
+    return Image(data=base64.b64decode(b64_data), format="png")
 
 
 GAME_NOT_RUNNING_MSG = "Game is not running. Use godot_run_game() to start it first."
@@ -68,7 +74,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         result: list[Any] = [data]
 
         if screenshot_data:
-            result.append(Image(data=screenshot_data, media_type="image/png"))
+            result.append(_b64_image(screenshot_data))
 
         return result
 
@@ -96,7 +102,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         return [
             f"Game screenshot ({data['size'][0]}x{data['size'][1]}, frame {data.get('frame', '?')})",
-            Image(data=data["image"], media_type=data["mime"]),
+            _b64_image(data["image"]),
         ]
 
     @mcp.tool
@@ -126,7 +132,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         return [
             f"Node screenshot (region: {data.get('node_rect', 'unknown')})",
-            Image(data=data["image"], media_type=data["mime"]),
+            _b64_image(data["image"]),
         ]
 
     # --- Input ---
@@ -237,6 +243,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     ) -> list[Any]:
         """Execute a sequence of input steps with proper timing.
 
+        Build this sequence dynamically based on what you see in the latest snapshot
+        and screenshot. Every game is different — construct the steps based on the
+        current game state, not from a fixed template.
+
         Each step is a dict with one key determining the action:
         - {"key": "d", "duration": 2.0} — hold D for 2 seconds
         - {"wait": 0.5} — wait 0.5 seconds
@@ -246,7 +256,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         - {"mouse_move": [500, 300]} — move mouse
 
         Args:
-            steps: List of input step dicts to execute in order.
+            steps: List of input step dicts to execute in order. Build this from
+                   what you observe in the game, not from a static script.
             snapshot_after: Take a snapshot after the sequence (default True).
             screenshot_after: Include screenshot in the post-sequence snapshot (default True).
         """
@@ -266,7 +277,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         screenshot_data = data.pop("screenshot", None)
         result: list[Any] = [data]
         if screenshot_data:
-            result.append(Image(data=screenshot_data, media_type="image/png"))
+            result.append(_b64_image(screenshot_data))
         return result
 
     # --- State ---
@@ -363,7 +374,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         screenshot_data = data.pop("screenshot", None)
         result: list[Any] = [data]
         if screenshot_data and isinstance(screenshot_data, str):
-            result.append(Image(data=screenshot_data, media_type="image/png"))
+            result.append(_b64_image(screenshot_data))
         return result
 
     @mcp.tool
@@ -433,7 +444,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         result: list[Any] = [data]
         if screenshot_data and isinstance(screenshot_data, str):
-            result.append(Image(data=screenshot_data, media_type="image/png"))
+            result.append(_b64_image(screenshot_data))
         return result
 
     # --- Info ---

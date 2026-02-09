@@ -7,10 +7,16 @@ project structure, run control, and editor screenshots.
 from __future__ import annotations
 
 import asyncio
+import base64
 from typing import Any
 
 from fastmcp import FastMCP, Image
 from client import editor, runtime
+
+
+def _b64_image(b64_data: str) -> Image:
+    """Decode a base64 PNG string from Godot into a FastMCP Image."""
+    return Image(data=base64.b64decode(b64_data), format="png")
 
 
 def register_editor_tools(mcp: FastMCP) -> None:
@@ -273,5 +279,5 @@ def register_editor_tools(mcp: FastMCP) -> None:
 
         return [
             f"Editor screenshot ({data['size'][0]}x{data['size'][1]})",
-            Image(data=data["image"], media_type=data["mime"]),
+            _b64_image(data["image"]),
         ]
