@@ -56,7 +56,7 @@ The MCP server communicates with the Godot plugin over HTTP:
 - **Port 9899** — Editor bridge (always running when plugin is enabled)
 - **Port 9900** — Runtime bridge (only when game is running)
 
-See the [main README](../README.md) for Godot plugin installation.
+See the [main README](../../../README.md) for Godot plugin installation.
 
 ## Tools
 

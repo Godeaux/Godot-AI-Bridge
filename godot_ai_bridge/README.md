@@ -33,7 +33,7 @@ Copy `addons/godot_ai_bridge/` into your Godot project's `addons/` folder:
 ```
 your_project/
 ├── addons/
-│   └── godot_ai_bridge/   ← copy this
+│   └── godot_ai_bridge/   ← copy this (includes mcp_server/)
 ├── scenes/
 ├── scripts/
 └── project.godot
@@ -50,33 +50,20 @@ pip install fastmcp httpx
 Or if you use [uv](https://docs.astral.sh/uv/):
 
 ```bash
-cd mcp_server
+cd your_project/addons/godot_ai_bridge/mcp_server
 uv sync
 ```
 
 ### 3. Configure Your AI Client
 
-Add the MCP server to your AI client's configuration. Replace `/path/to` with the actual path.
+Add the MCP server to your AI client's configuration. Replace `/path/to/your_project` with the actual path.
 
-**Using pip:**
 ```json
 {
   "mcpServers": {
     "godot": {
       "command": "python",
-      "args": ["/path/to/godot_ai_bridge/mcp_server/server.py"]
-    }
-  }
-}
-```
-
-**Using uv:**
-```json
-{
-  "mcpServers": {
-    "godot": {
-      "command": "uv",
-      "args": ["run", "/path/to/godot_ai_bridge/mcp_server/server.py"]
+      "args": ["/path/to/your_project/addons/godot_ai_bridge/mcp_server/server.py"]
     }
   }
 }
