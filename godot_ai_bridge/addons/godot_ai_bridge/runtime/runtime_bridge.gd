@@ -11,6 +11,9 @@ func _ready() -> void:
 		queue_free()
 		return
 
+	# Critical: ensure bridge keeps running even when the game is paused
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	_routes_handler = RuntimeRoutes.new(get_tree())
 
 	# Register all runtime routes
@@ -29,6 +32,11 @@ func _ready() -> void:
 	register_route("POST", "/wait", _on_wait)
 	register_route("POST", "/wait_for", _on_wait_for)
 	register_route("GET", "/info", _on_info)
+	register_route("POST", "/pause", _on_pause)
+	register_route("POST", "/timescale", _on_timescale)
+	register_route("GET", "/console", _on_console)
+	register_route("GET", "/snapshot/diff", _on_snapshot_diff)
+	register_route("GET", "/scene_history", _on_scene_history)
 
 	var err: Error = start(BridgeConfig.RUNTIME_PORT)
 	if err == OK:
@@ -87,3 +95,18 @@ func _on_wait_for(request: BridgeHTTPServer.HTTPRequest) -> Variant:
 
 func _on_info(request: BridgeHTTPServer.HTTPRequest) -> Variant:
 	return _routes_handler.handle_info(request)
+
+func _on_pause(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+	return _routes_handler.handle_pause(request)
+
+func _on_timescale(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+	return _routes_handler.handle_timescale(request)
+
+func _on_console(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+	return _routes_handler.handle_console(request)
+
+func _on_snapshot_diff(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+	return _routes_handler.handle_snapshot_diff(request)
+
+func _on_scene_history(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+	return _routes_handler.handle_scene_history(request)

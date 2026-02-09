@@ -90,6 +90,41 @@ func handle_open_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 	return SceneTools.open_scene(path)
 
 
+## POST /node/duplicate
+func handle_duplicate_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var path: String = str(body.get("path", ""))
+	var new_name: String = str(body.get("new_name", ""))
+
+	if path == "":
+		return {"error": "Must provide 'path'"}
+
+	return SceneTools.duplicate_node(path, new_name)
+
+
+## POST /node/reparent
+func handle_reparent_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var path: String = str(body.get("path", ""))
+	var new_parent: String = str(body.get("new_parent", ""))
+	var keep_transform: bool = body.get("keep_global_transform", true)
+
+	if path == "":
+		return {"error": "Must provide 'path'"}
+	if new_parent == "":
+		return {"error": "Must provide 'new_parent'"}
+
+	return SceneTools.reparent_node(path, new_parent, keep_transform)
+
+
+## GET /node/properties
+func handle_list_node_properties(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var path: String = request.query_params.get("path", "")
+	if path == "":
+		return {"error": "Must provide 'path' query param"}
+	return SceneTools.list_node_properties(path)
+
+
 # --- Script Operations ---
 
 ## GET /script/read

@@ -114,6 +114,54 @@ def register_editor_tools(mcp: FastMCP) -> None:
         """
         return await editor.post("/scene/open", {"path": path})
 
+    @mcp.tool
+    async def godot_duplicate_node(path: str, new_name: str = "") -> dict[str, Any]:
+        """Duplicate a node in the currently edited scene.
+
+        Creates a copy of the node (and all its children) as a sibling.
+        The duplicate gets all the same properties, children, and scripts.
+
+        Args:
+            path: Path to the node to duplicate (e.g., 'Player', 'Enemies/Goblin').
+            new_name: Optional name for the duplicate. If empty, Godot auto-names it.
+        """
+        body: dict[str, Any] = {"path": path}
+        if new_name:
+            body["new_name"] = new_name
+        return await editor.post("/node/duplicate", body)
+
+    @mcp.tool
+    async def godot_reparent_node(
+        path: str,
+        new_parent: str,
+        keep_global_transform: bool = True,
+    ) -> dict[str, Any]:
+        """Move a node to a different parent in the currently edited scene.
+
+        Args:
+            path: Path to the node to move (e.g., 'OldParent/MyNode').
+            new_parent: Path to the new parent ('.' for scene root, 'NewParent' for a child).
+            keep_global_transform: If True, adjusts local transform to maintain global position.
+        """
+        return await editor.post("/node/reparent", {
+            "path": path,
+            "new_parent": new_parent,
+            "keep_global_transform": keep_global_transform,
+        })
+
+    @mcp.tool
+    async def godot_list_node_properties(path: str) -> dict[str, Any]:
+        """List all editable properties of a node in the currently edited scene.
+
+        Returns every editor-visible property with its name, type, current value,
+        and type hints. Useful for discovering what properties exist before
+        setting them with godot_set_property.
+
+        Args:
+            path: Node path ('.' for root, 'Player', 'UI/Score', etc.).
+        """
+        return await editor.get("/node/properties", {"path": path})
+
     # --- Script Tools ---
 
     @mcp.tool

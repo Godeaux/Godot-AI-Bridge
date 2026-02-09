@@ -447,6 +447,110 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             result.append(_b64_image(screenshot_data))
         return result
 
+    # --- Game Control ---
+
+    @mcp.tool
+    async def game_pause(paused: bool = True) -> dict[str, Any]:
+        """Pause or unpause the running game.
+
+        While paused, the game world freezes — physics, animations, timers all stop.
+        The runtime bridge keeps working (it uses PROCESS_MODE_ALWAYS), so you can
+        still take snapshots and inspect state while paused.
+
+        This is invaluable for debugging: pause the game, inspect node states, check
+        positions, then resume. Combine with game_set_timescale for slow-motion debugging.
+
+        Args:
+            paused: True to pause, False to unpause.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        return await runtime.post("/pause", {"paused": paused})
+
+    @mcp.tool
+    async def game_set_timescale(scale: float = 1.0) -> dict[str, Any]:
+        """Set the game's time scale (speed multiplier).
+
+        Affects all time-dependent systems: physics, animations, timers, delta.
+        Does NOT affect the runtime bridge.
+
+        Useful values:
+        - 0.1 — 10x slow motion, great for watching fast-moving gameplay
+        - 0.5 — half speed, good for observing animations
+        - 1.0 — normal speed (default)
+        - 2.0 — double speed, useful for skipping through slow sections
+        - 5.0 — fast forward through waiting periods
+
+        Args:
+            scale: Time multiplier (clamped to 0.01–10.0). Default 1.0.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        return await runtime.post("/timescale", {"scale": scale})
+
+    # --- Console & Diagnostics ---
+
+    @mcp.tool
+    async def game_console_output() -> dict[str, Any]:
+        """Get recent game console/log output from the running game.
+
+        Returns the tail of the Godot log file, which includes print() output,
+        push_error() messages, push_warning() messages, and engine diagnostics.
+
+        Invaluable for debugging runtime issues, seeing print() debug output,
+        and catching errors that occur during gameplay.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        return await runtime.get("/console")
+
+    # --- Snapshot Diff ---
+
+    @mcp.tool
+    async def game_snapshot_diff(depth: int = 12) -> dict[str, Any]:
+        """Compare the current game state to the previous snapshot.
+
+        Returns a structured diff showing what changed: nodes added/removed,
+        properties that changed (position, visibility, text, script variables),
+        and scene-level changes.
+
+        Much more efficient than manually comparing full snapshots — tells you
+        exactly what happened since last check. Ideal for verifying that an action
+        had the expected effect.
+
+        The first call stores a baseline; subsequent calls compare to the previous.
+
+        Args:
+            depth: Max tree depth to walk (default 12).
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        return await runtime.get("/snapshot/diff", {"depth": str(depth)})
+
+    # --- Scene History ---
+
+    @mcp.tool
+    async def game_scene_history() -> dict[str, Any]:
+        """Get recent scene tree change events from the running game.
+
+        Returns a chronological log of tree_changed events, showing when the
+        scene tree was modified (nodes added/removed/moved). Useful for
+        understanding what happened during a sequence of actions.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        return await runtime.get("/scene_history")
+
     # --- Info ---
 
     @mcp.tool

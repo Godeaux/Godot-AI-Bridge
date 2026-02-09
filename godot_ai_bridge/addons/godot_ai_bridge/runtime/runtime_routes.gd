@@ -6,12 +6,18 @@ extends RefCounted
 var _snapshot: RuntimeSnapshot
 var _injector: InputInjector
 var _tree: SceneTree
+var _previous_snapshot: Dictionary = {}
+var _scene_history: Array[Dictionary] = []
+var _scene_history_max: int = 50
 
 
 func _init(tree: SceneTree) -> void:
 	_tree = tree
 	_snapshot = RuntimeSnapshot.new()
 	_injector = InputInjector.new(tree)
+
+	# Track scene changes for history
+	_tree.tree_changed.connect(_on_tree_changed)
 
 
 ## GET /snapshot — Primary observation channel.
@@ -428,6 +434,95 @@ func handle_info(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 	}
 
 
+## POST /pause — Pause or unpause the game.
+func handle_pause(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var paused: bool = body.get("paused", true)
+
+	_tree.paused = paused
+	return {"ok": true, "paused": _tree.paused}
+
+
+## POST /timescale — Set the game time scale.
+func handle_timescale(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var scale: float = float(body.get("scale", 1.0))
+
+	# Clamp to safe range (0.01 to 10.0)
+	scale = clampf(scale, 0.01, 10.0)
+	Engine.time_scale = scale
+	return {"ok": true, "time_scale": Engine.time_scale}
+
+
+## GET /console — Get recent game console/log output.
+func handle_console(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	# Read from the game's log file
+	var log_path: String = OS.get_user_data_dir().path_join("logs/godot.log")
+	if not FileAccess.file_exists(log_path):
+		# Try alternate paths
+		var alt_paths: Array[String] = [
+			ProjectSettings.globalize_path("user://logs/godot.log"),
+			ProjectSettings.globalize_path("user://logs/editor.log"),
+		]
+		for alt: String in alt_paths:
+			if FileAccess.file_exists(alt):
+				log_path = alt
+				break
+
+	if not FileAccess.file_exists(log_path):
+		return {"output": "", "note": "No log file found"}
+
+	var file: FileAccess = FileAccess.open(log_path, FileAccess.READ)
+	if file == null:
+		return {"output": "", "error": "Cannot open log file"}
+
+	var content: String = file.get_as_text()
+	file.close()
+
+	# Return last ~6000 characters (recent output)
+	if content.length() > 6000:
+		content = "...(truncated)\n" + content.substr(content.length() - 6000)
+
+	return {"output": content, "source": log_path, "length": content.length()}
+
+
+## GET /snapshot/diff — Compare current snapshot to previous one.
+func handle_snapshot_diff(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var root: Node = _get_scene_root()
+	if root == null:
+		return {"error": "No active scene"}
+
+	var depth: int = int(request.query_params.get("depth", str(BridgeConfig.MAX_SNAPSHOT_DEPTH)))
+
+	# Take current snapshot
+	var current: Dictionary = _snapshot.take_snapshot(root, depth)
+
+	if _previous_snapshot.is_empty():
+		_previous_snapshot = current
+		return {
+			"diff": "first_snapshot",
+			"note": "No previous snapshot to compare. This snapshot is now stored as baseline.",
+			"snapshot": current,
+		}
+
+	# Compare snapshots
+	var diff: Dictionary = _compute_snapshot_diff(_previous_snapshot, current)
+	_previous_snapshot = current
+
+	return {
+		"diff": diff,
+		"snapshot": current,
+	}
+
+
+## GET /scene_history — Get recent scene tree change events.
+func handle_scene_history(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	return {
+		"events": _scene_history,
+		"count": _scene_history.size(),
+	}
+
+
 ## Helper to get the current scene root.
 func _get_scene_root() -> Node:
 	if _tree.current_scene:
@@ -466,3 +561,104 @@ func _wait_for_signal_with_timeout(node: Node, sig_name: String, timeout_sec: fl
 
 	var total_elapsed: float = (Time.get_ticks_msec() / 1000.0) - start
 	return [true, total_elapsed]
+
+
+## Compute a diff between two snapshots.
+func _compute_snapshot_diff(old_snap: Dictionary, new_snap: Dictionary) -> Dictionary:
+	var diff: Dictionary = {}
+
+	# Top-level changes
+	if old_snap.get("paused") != new_snap.get("paused"):
+		diff["paused_changed"] = {"from": old_snap.get("paused"), "to": new_snap.get("paused")}
+	if old_snap.get("scene_name") != new_snap.get("scene_name"):
+		diff["scene_changed"] = {"from": old_snap.get("scene_name"), "to": new_snap.get("scene_name")}
+
+	# Build lookup of old nodes by path
+	var old_nodes: Dictionary = {}
+	_flatten_nodes(old_snap.get("nodes", []), old_nodes)
+	var new_nodes: Dictionary = {}
+	_flatten_nodes(new_snap.get("nodes", []), new_nodes)
+
+	# Find added nodes
+	var added: Array[String] = []
+	for path: String in new_nodes:
+		if not old_nodes.has(path):
+			added.append(path)
+	if not added.is_empty():
+		diff["nodes_added"] = added
+
+	# Find removed nodes
+	var removed: Array[String] = []
+	for path: String in old_nodes:
+		if not new_nodes.has(path):
+			removed.append(path)
+	if not removed.is_empty():
+		diff["nodes_removed"] = removed
+
+	# Find changed properties on existing nodes
+	var changed: Dictionary = {}
+	for path: String in new_nodes:
+		if old_nodes.has(path):
+			var node_changes: Dictionary = _diff_node(old_nodes[path], new_nodes[path])
+			if not node_changes.is_empty():
+				changed[path] = node_changes
+	if not changed.is_empty():
+		diff["nodes_changed"] = changed
+
+	if diff.is_empty():
+		diff["no_changes"] = true
+
+	return diff
+
+
+## Flatten a nested nodes array into a path → data dictionary.
+func _flatten_nodes(nodes: Array, out: Dictionary) -> void:
+	for node_data: Variant in nodes:
+		if node_data is Dictionary:
+			var path: String = str(node_data.get("path", ""))
+			if path != "":
+				out[path] = node_data
+			var children: Array = node_data.get("children", [])
+			if not children.is_empty():
+				_flatten_nodes(children, out)
+
+
+## Diff two node data dictionaries, returning only changed fields.
+func _diff_node(old_node: Dictionary, new_node: Dictionary) -> Dictionary:
+	var changes: Dictionary = {}
+	var check_keys: Array[String] = ["visible", "text", "position", "global_position", "rotation"]
+
+	for key: String in check_keys:
+		var old_val: Variant = old_node.get(key)
+		var new_val: Variant = new_node.get(key)
+		if old_val != new_val and old_val != null and new_val != null:
+			changes[key] = {"from": old_val, "to": new_val}
+
+	# Check script properties
+	var old_props: Dictionary = old_node.get("properties", {})
+	var new_props: Dictionary = new_node.get("properties", {})
+	var prop_changes: Dictionary = {}
+	for prop_name: String in new_props:
+		if old_props.get(prop_name) != new_props[prop_name]:
+			prop_changes[prop_name] = {"from": old_props.get(prop_name), "to": new_props[prop_name]}
+	if not prop_changes.is_empty():
+		changes["properties"] = prop_changes
+
+	return changes
+
+
+## Callback for scene tree changes — records events for history.
+func _on_tree_changed() -> void:
+	var root: Node = _get_scene_root()
+	var scene_name: String = str(root.name) if root else "unknown"
+
+	_scene_history.append({
+		"time": Time.get_ticks_msec() / 1000.0,
+		"frame": Engine.get_frames_drawn(),
+		"scene": scene_name,
+		"event": "tree_changed",
+	})
+
+	# Cap history size
+	while _scene_history.size() > _scene_history_max:
+		_scene_history.pop_front()

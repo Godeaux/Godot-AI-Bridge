@@ -144,6 +144,100 @@ static func open_scene(path: String) -> Dictionary:
 	return {"ok": true, "path": path}
 
 
+## Duplicate a node in the currently edited scene.
+static func duplicate_node(node_path: String, new_name: String = "") -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if node == root:
+		return {"error": "Cannot duplicate the root node"}
+
+	var dup: Node = node.duplicate()
+	if dup == null:
+		return {"error": "Failed to duplicate node"}
+
+	if new_name != "":
+		dup.name = new_name
+
+	node.get_parent().add_child(dup)
+	dup.owner = root
+	_set_owner_recursive(dup, root)
+
+	return {"ok": true, "path": str(root.get_path_to(dup)), "name": str(dup.name)}
+
+
+## Reparent a node to a different parent in the currently edited scene.
+static func reparent_node(node_path: String, new_parent_path: String, keep_global_transform: bool = true) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if node == root:
+		return {"error": "Cannot reparent the root node"}
+
+	var new_parent: Node = root if new_parent_path == "." or new_parent_path == "" else root.get_node_or_null(new_parent_path)
+	if new_parent == null:
+		return {"error": "New parent not found: %s" % new_parent_path}
+
+	if node.is_ancestor_of(new_parent):
+		return {"error": "Cannot reparent a node to its own descendant"}
+
+	node.reparent(new_parent, keep_global_transform)
+	node.owner = root
+	_set_owner_recursive(node, root)
+
+	return {"ok": true, "new_path": str(root.get_path_to(node))}
+
+
+## List all properties of a node in the currently edited scene.
+static func list_node_properties(node_path: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	var properties: Array = []
+	var prop_list: Array[Dictionary] = node.get_property_list()
+	for prop: Dictionary in prop_list:
+		var usage: int = prop.get("usage", 0)
+		# Include editor-visible properties (PROPERTY_USAGE_EDITOR = 4) and script vars
+		if (usage & PROPERTY_USAGE_EDITOR) != 0 or (usage & PROPERTY_USAGE_SCRIPT_VARIABLE) != 0:
+			var prop_info: Dictionary = {
+				"name": prop["name"],
+				"type": type_string(prop.get("type", TYPE_NIL)),
+				"value": BridgeSerialization.serialize(node.get(prop["name"])),
+			}
+			if prop.has("hint_string") and prop["hint_string"] != "":
+				prop_info["hint"] = prop["hint_string"]
+			properties.append(prop_info)
+
+	return {
+		"node": str(node.name),
+		"type": node.get_class(),
+		"properties": properties,
+		"count": properties.size(),
+	}
+
+
+## Recursively set owner on all children (so they save with the scene).
+static func _set_owner_recursive(node: Node, owner: Node) -> void:
+	for child: Node in node.get_children():
+		child.owner = owner
+		_set_owner_recursive(child, owner)
+
+
 ## Create a node by its class name string.
 static func _create_node_by_type(type_name: String) -> Node:
 	if not ClassDB.class_exists(type_name):

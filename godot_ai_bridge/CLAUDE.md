@@ -28,9 +28,13 @@ Every decision you make should come from what you see in the screenshot and read
 
 ### Editor Tools (`godot_*`) — always available when Godot editor is open
 Edit scenes, scripts, and project files. Control the Godot Editor itself.
+Includes scene tree manipulation, script read/write, node CRUD (add, remove, duplicate, reparent),
+property inspection, project search, and run control.
 
 ### Runtime Tools (`game_*`) — only when game is running
 Interact with the actual running game. Take snapshots, inject input, read state.
+Includes pause/resume, time scale control, snapshot diffing, console output,
+scene history, and per-node detailed state inspection.
 
 ## Core Workflow
 
@@ -65,6 +69,10 @@ The key insight: **you are looking at a screenshot of a real game and deciding w
 - **Use `game_trigger_action`** instead of raw keys when possible — it maps to the project's InputMap.
 - **After editing code**, you must stop and restart the game for changes to take effect.
 - **For multi-step actions**, use `game_input_sequence` — but build the sequence dynamically based on what you see, not from a template.
+- **Use `game_snapshot_diff`** to efficiently see what changed after an action, instead of manually comparing full snapshots.
+- **Use `game_pause` + `game_snapshot`** for freeze-frame debugging — pause, inspect, resume.
+- **Use `game_set_timescale(0.2)`** for slow-motion to observe fast gameplay in detail.
+- **Use `game_console_output`** to check for errors, warnings, and print() debug output during gameplay.
 
 ## Reading Snapshots
 
@@ -76,6 +84,42 @@ Each node in a snapshot has:
 - `text` — for UI elements (Labels, Buttons) — read these to understand what's on screen
 - `properties` — exported script variables (health, speed, score, etc.) — the game's actual state
 - `groups` — group memberships (useful for understanding what a node represents)
+
+## Advanced: Pause-and-Inspect Debugging
+
+When something goes wrong or you need to carefully analyze game state:
+
+```
+1. game_pause()                    →  Freeze the game world
+2. game_snapshot()                 →  See exactly what's happening at this frozen moment
+3. game_state(ref="n3")            →  Deep inspect the player node (velocity, is_on_floor, etc.)
+4. game_console_output()           →  Check for errors or debug prints
+5. game_pause(paused=false)        →  Resume the game
+```
+
+## Advanced: Slow-Motion Analysis
+
+For fast-paced games where things happen too quickly to observe:
+
+```
+1. game_set_timescale(0.2)         →  Slow to 20% speed
+2. game_trigger_action("attack")   →  Perform the action
+3. game_snapshot()                 →  See intermediate states clearly
+4. game_set_timescale(1.0)         →  Return to normal speed
+```
+
+## Advanced: Efficient Change Detection
+
+Use `game_snapshot_diff` instead of comparing full snapshots manually:
+
+```
+1. game_snapshot_diff()            →  Baseline (first call stores state)
+2. game_trigger_action("jump")
+3. game_wait(1.0)
+4. game_snapshot_diff()            →  Shows exactly what changed:
+   → nodes_changed: {"Player": {"global_position": {"from": [100, 400], "to": [100, 250]}}}
+   → properties: {"score": {"from": 0, "to": 100}}
+```
 
 ## Example: Playing a Platformer
 

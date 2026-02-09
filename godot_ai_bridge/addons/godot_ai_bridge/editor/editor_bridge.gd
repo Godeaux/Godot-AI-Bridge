@@ -18,6 +18,9 @@ func _ready() -> void:
 	register_route("GET", "/node/get_property", _routes_handler.handle_get_property)
 	register_route("POST", "/scene/save", _routes_handler.handle_save_scene)
 	register_route("POST", "/scene/open", _routes_handler.handle_open_scene)
+	register_route("POST", "/node/duplicate", _routes_handler.handle_duplicate_node)
+	register_route("POST", "/node/reparent", _routes_handler.handle_reparent_node)
+	register_route("GET", "/node/properties", _routes_handler.handle_list_node_properties)
 
 	# Script operations
 	register_route("GET", "/script/read", _routes_handler.handle_read_script)
