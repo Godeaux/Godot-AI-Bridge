@@ -1,0 +1,5 @@
+# Godot
+.godot/
+
+# GdUnit4 — installed via ./install_gdunit4.sh
+addons/gdUnit4/

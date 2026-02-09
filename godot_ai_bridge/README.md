@@ -119,11 +119,42 @@ Runtime tools become available when you run the game via `godot_run_game`.
 
 Both bind to `127.0.0.1` only — no external network access.
 
+## Testing
+
+Tests use [GdUnit4](https://github.com/godot-gdunit-labs/gdUnit4) (v6.1.1+). Install it before running tests:
+
+```bash
+# From the godot_ai_bridge/ directory:
+./install_gdunit4.sh
+```
+
+Or install manually:
+
+1. Download [GdUnit4 v6.1.1](https://github.com/godot-gdunit-labs/gdUnit4/releases/tag/v6.1.1) (`v6.1.1.zip`)
+2. Extract the `addons/gdUnit4/` folder into `godot_ai_bridge/addons/`
+3. Open the project in Godot and enable the GdUnit4 plugin under **Project > Project Settings > Plugins**
+
+Test files live in `test/` and extend `GdUnitTestSuite`:
+
+```gdscript
+extends GdUnitTestSuite
+
+func test_something() -> void:
+    assert_str("hello").is_equal("hello")
+```
+
+Run from Godot's GdUnit4 inspector panel, or headless:
+
+```bash
+godot --headless --path . -s addons/gdUnit4/bin/GdUnitCmdTool.gd -a test/
+```
+
 ## Requirements
 
 - Godot 4.6
 - Python 3.10+
 - [FastMCP](https://pypi.org/project/fastmcp/) 2.x and [httpx](https://pypi.org/project/httpx/)
+- [GdUnit4](https://github.com/godot-gdunit-labs/gdUnit4) 6.1.1+ (for tests only)
 
 ## License
 
