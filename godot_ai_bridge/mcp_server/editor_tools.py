@@ -32,9 +32,14 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Use this to understand the scene structure before making modifications.
         """
         try:
-            return await editor.get("/scene/tree")
+            data = await editor.get("/scene/tree")
         except Exception as e:
             return {"error": f"Editor not reachable: {e}. Is the Godot editor open with the AI Bridge plugin enabled?"}
+        if "error" in data:
+            return data
+        root = data.get("root", {})
+        data["_description"] = f"🌳 Scene tree of '{root.get('name', '?')}' ({root.get('type', '?')})"
+        return data
 
     @mcp.tool
     async def godot_create_scene(root_type: str, save_path: str) -> dict[str, Any]:
@@ -44,7 +49,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
             root_type: The Godot node class for the root (e.g., 'Node2D', 'Control', 'Node3D').
             save_path: Where to save the scene (e.g., 'res://scenes/level_2.tscn').
         """
-        return await editor.post("/scene/create", {"root_type": root_type, "save_path": save_path})
+        result = await editor.post("/scene/create", {"root_type": root_type, "save_path": save_path})
+        if "ok" in result:
+            result["_description"] = f"🆕 Created scene '{save_path}' (root: {root_type})"
+        return result
 
     @mcp.tool
     async def godot_add_node(
@@ -66,7 +74,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
         body: dict[str, Any] = {"parent_path": parent_path, "type": type, "name": name}
         if properties:
             body["properties"] = properties
-        return await editor.post("/node/add", body)
+        result = await editor.post("/node/add", body)
+        if "ok" in result:
+            result["_description"] = f"➕ Added {type} '{name}' under '{parent_path}'"
+        return result
 
     @mcp.tool
     async def godot_remove_node(path: str) -> dict[str, Any]:
@@ -75,7 +86,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Args:
             path: Path to the node relative to scene root (e.g., 'Player/OldChild').
         """
-        return await editor.post("/node/remove", {"path": path})
+        result = await editor.post("/node/remove", {"path": path})
+        if "ok" in result:
+            result["_description"] = f"🗑️ Removed node '{path}'"
+        return result
 
     @mcp.tool
     async def godot_set_property(path: str, property: str, value: Any) -> dict[str, Any]:
@@ -88,7 +102,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
                    Use dicts for colors: {"r": 1, "g": 0, "b": 0, "a": 1}.
                    Use strings for resource paths: "res://textures/sprite.png".
         """
-        return await editor.post("/node/set_property", {"path": path, "property": property, "value": value})
+        result = await editor.post("/node/set_property", {"path": path, "property": property, "value": value})
+        if "ok" in result:
+            result["_description"] = f"✏️ Set '{path}'.{property}"
+        return result
 
     @mcp.tool
     async def godot_get_property(path: str, property: str) -> dict[str, Any]:
@@ -98,12 +115,18 @@ def register_editor_tools(mcp: FastMCP) -> None:
             path: Node path relative to scene root.
             property: Property name to read.
         """
-        return await editor.get("/node/get_property", {"path": path, "property": property})
+        result = await editor.get("/node/get_property", {"path": path, "property": property})
+        if "error" not in result:
+            result["_description"] = f"🔍 '{path}'.{property} = {result.get('value', '?')}"
+        return result
 
     @mcp.tool
     async def godot_save_scene() -> dict[str, Any]:
         """Save the currently edited scene to disk."""
-        return await editor.post("/scene/save")
+        result = await editor.post("/scene/save")
+        if "ok" in result:
+            result["_description"] = "💾 Scene saved"
+        return result
 
     @mcp.tool
     async def godot_open_scene(path: str) -> dict[str, Any]:
@@ -112,7 +135,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Args:
             path: Resource path to the scene (e.g., 'res://scenes/main.tscn').
         """
-        return await editor.post("/scene/open", {"path": path})
+        result = await editor.post("/scene/open", {"path": path})
+        if "ok" in result:
+            result["_description"] = f"📂 Opened scene '{path}'"
+        return result
 
     @mcp.tool
     async def godot_duplicate_node(path: str, new_name: str = "") -> dict[str, Any]:
@@ -128,7 +154,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
         body: dict[str, Any] = {"path": path}
         if new_name:
             body["new_name"] = new_name
-        return await editor.post("/node/duplicate", body)
+        result = await editor.post("/node/duplicate", body)
+        if "ok" in result:
+            result["_description"] = f"📋 Duplicated '{path}' → '{result.get('name', '?')}'"
+        return result
 
     @mcp.tool
     async def godot_reparent_node(
@@ -143,11 +172,14 @@ def register_editor_tools(mcp: FastMCP) -> None:
             new_parent: Path to the new parent ('.' for scene root, 'NewParent' for a child).
             keep_global_transform: If True, adjusts local transform to maintain global position.
         """
-        return await editor.post("/node/reparent", {
+        result = await editor.post("/node/reparent", {
             "path": path,
             "new_parent": new_parent,
             "keep_global_transform": keep_global_transform,
         })
+        if "ok" in result:
+            result["_description"] = f"📦 Reparented '{path}' → under '{new_parent}'"
+        return result
 
     @mcp.tool
     async def godot_list_node_properties(path: str) -> dict[str, Any]:
@@ -160,7 +192,88 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Args:
             path: Node path ('.' for root, 'Player', 'UI/Score', etc.).
         """
-        return await editor.get("/node/properties", {"path": path})
+        result = await editor.get("/node/properties", {"path": path})
+        if "error" not in result:
+            result["_description"] = f"📜 {result.get('count', '?')} properties on '{result.get('node', path)}' ({result.get('type', '?')})"
+        return result
+
+    @mcp.tool
+    async def godot_rename_node(path: str, new_name: str) -> dict[str, Any]:
+        """Rename a node in the currently edited scene.
+
+        Args:
+            path: Path to the node to rename (e.g., 'Player', 'UI/OldLabel').
+            new_name: The new name for the node.
+        """
+        result = await editor.post("/node/rename", {"path": path, "new_name": new_name})
+        if "ok" in result:
+            result["_description"] = f"✏️ Renamed '{result.get('old_name', path)}' → '{new_name}'"
+        return result
+
+    @mcp.tool
+    async def godot_instance_scene(
+        scene_path: str,
+        parent_path: str = ".",
+        name: str = "",
+    ) -> dict[str, Any]:
+        """Add an instance of a PackedScene (.tscn) as a child node.
+
+        This is how you compose scenes — instantiate a player.tscn inside a level,
+        add enemy.tscn instances, place UI components, etc. The instanced scene
+        retains its connection to the source .tscn file.
+
+        Args:
+            scene_path: Resource path to the scene file (e.g., 'res://scenes/player.tscn').
+            parent_path: Where to add it ('.' for scene root, 'Enemies' for a child).
+            name: Optional custom name. If empty, uses the scene's root node name.
+        """
+        body: dict[str, Any] = {"scene_path": scene_path, "parent_path": parent_path}
+        if name:
+            body["name"] = name
+        result = await editor.post("/node/instance_scene", body)
+        if "ok" in result:
+            result["_description"] = f"🔗 Instanced '{scene_path}' as '{result.get('name', '?')}' under '{parent_path}'"
+        return result
+
+    @mcp.tool
+    async def godot_find_nodes(
+        name: str = "",
+        type: str = "",
+        group: str = "",
+        in_path: str = "",
+    ) -> dict[str, Any]:
+        """Search for nodes in the currently edited scene by name, type, or group.
+
+        At least one search criterion must be provided. Results include each
+        matching node's name, type, and path.
+
+        Args:
+            name: Name pattern to match. Supports '*' wildcards (e.g., 'Enemy*', '*Label').
+                  Without wildcards, matches as a case-insensitive substring.
+            type: Godot class name to filter by (e.g., 'Label', 'CharacterBody2D').
+                  Also matches subclasses.
+            group: Group name the node must belong to (e.g., 'enemies', 'interactable').
+            in_path: Optional subtree to search within (e.g., 'UI' to only search under UI).
+        """
+        params: dict[str, str] = {}
+        if name:
+            params["name"] = name
+        if type:
+            params["type"] = type
+        if group:
+            params["group"] = group
+        if in_path:
+            params["in"] = in_path
+        result = await editor.get("/node/find", params)
+        if "error" not in result:
+            count = result.get("count", 0)
+            criteria = " + ".join(filter(None, [
+                f"name='{name}'" if name else "",
+                f"type='{type}'" if type else "",
+                f"group='{group}'" if group else "",
+            ]))
+            result["_description"] = f"🔍 Found {count} node(s) matching {criteria}"
+        return result
 
     # --- Script Tools ---
 
@@ -171,7 +284,11 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Args:
             path: Resource path to the script (e.g., 'res://scripts/player.gd').
         """
-        return await editor.get("/script/read", {"path": path})
+        result = await editor.get("/script/read", {"path": path})
+        if "error" not in result:
+            lines = result.get("content", "").count("\n") + 1
+            result["_description"] = f"📄 Read '{path}' ({lines} lines)"
+        return result
 
     @mcp.tool
     async def godot_write_script(path: str, content: str) -> dict[str, Any]:
@@ -183,7 +300,11 @@ def register_editor_tools(mcp: FastMCP) -> None:
             path: Resource path for the script (e.g., 'res://scripts/player.gd').
             content: Full script content to write.
         """
-        return await editor.post("/script/write", {"path": path, "content": content})
+        result = await editor.post("/script/write", {"path": path, "content": content})
+        if "ok" in result:
+            lines = content.count("\n") + 1
+            result["_description"] = f"✍️ Wrote '{path}' ({lines} lines)"
+        return result
 
     @mcp.tool
     async def godot_create_script(
@@ -198,7 +319,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
             extends: Base class (e.g., 'CharacterBody2D', 'Node2D', 'Control').
             template: Template type — 'basic' (ready+process), 'empty' (just extends), or 'full' (type-specific).
         """
-        return await editor.post("/script/create", {"path": path, "extends": extends, "template": template})
+        result = await editor.post("/script/create", {"path": path, "extends": extends, "template": template})
+        if "ok" in result:
+            result["_description"] = f"🆕 Created script '{path}' (extends {extends})"
+        return result
 
     @mcp.tool
     async def godot_get_errors() -> dict[str, Any]:
@@ -206,12 +330,20 @@ def register_editor_tools(mcp: FastMCP) -> None:
 
         Returns a list of errors with file paths and messages.
         """
-        return await editor.get("/script/errors")
+        result = await editor.get("/script/errors")
+        errors = result.get("errors", [])
+        if errors:
+            result["_description"] = f"❌ {len(errors)} script error(s)"
+        else:
+            result["_description"] = "✅ No script errors"
+        return result
 
     @mcp.tool
     async def godot_get_debugger_output() -> dict[str, Any]:
         """Get recent output from the editor's Output/debugger panel."""
-        return await editor.get("/debugger/output")
+        result = await editor.get("/debugger/output")
+        result["_description"] = "📟 Debugger output"
+        return result
 
     # --- Project Tools ---
 
@@ -222,7 +354,11 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Returns file names, types, paths, and sizes. Excludes .godot/ and the bridge addon.
         Use this to understand what files exist before reading or modifying them.
         """
-        return await editor.get("/project/structure")
+        result = await editor.get("/project/structure")
+        if "error" not in result:
+            file_count = len(result.get("files", []))
+            result["_description"] = f"📁 Project structure — {file_count} files"
+        return result
 
     @mcp.tool
     async def godot_search_files(pattern: str = "", query: str = "") -> dict[str, Any]:
@@ -237,7 +373,12 @@ def register_editor_tools(mcp: FastMCP) -> None:
             params["pattern"] = pattern
         if query:
             params["query"] = query
-        return await editor.get("/project/search", params)
+        result = await editor.get("/project/search", params)
+        if "error" not in result:
+            matches = len(result.get("files", result.get("results", [])))
+            term = pattern or query
+            result["_description"] = f"🔎 Search '{term}' — {matches} match(es)"
+        return result
 
     @mcp.tool
     async def godot_get_input_map() -> dict[str, Any]:
@@ -246,17 +387,28 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Returns action names mapped to their input events (keys, mouse buttons, joypad).
         Use this to understand what input actions are available for game_trigger_action.
         """
-        return await editor.get("/project/input_map")
+        result = await editor.get("/project/input_map")
+        if "error" not in result:
+            count = len(result.get("actions", {}))
+            result["_description"] = f"🎮 Input map — {count} action(s)"
+        return result
 
     @mcp.tool
     async def godot_get_project_settings() -> dict[str, Any]:
         """Get key project settings: name, main scene, window size, physics FPS, etc."""
-        return await editor.get("/project/settings")
+        result = await editor.get("/project/settings")
+        name = result.get("name", "?")
+        result["_description"] = f"⚙️ Project settings for '{name}'"
+        return result
 
     @mcp.tool
     async def godot_get_autoloads() -> dict[str, Any]:
         """Get all registered autoload singletons and their script paths."""
-        return await editor.get("/project/autoloads")
+        result = await editor.get("/project/autoloads")
+        if "error" not in result:
+            count = len(result.get("autoloads", {}))
+            result["_description"] = f"🔌 {count} autoload(s)"
+        return result
 
     # --- Run Control ---
 
@@ -311,7 +463,10 @@ def register_editor_tools(mcp: FastMCP) -> None:
     @mcp.tool
     async def godot_is_game_running() -> dict[str, Any]:
         """Check if the game is currently running."""
-        return await editor.get("/game/is_running")
+        result = await editor.get("/game/is_running")
+        running = result.get("running", False)
+        result["_description"] = "🟢 Game is running" if running else "⚫ Game is not running"
+        return result
 
     # --- Editor Screenshot ---
 

@@ -277,7 +277,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.post("/mouse_move", {"x": x, "y": y})
+        result = await runtime.post("/mouse_move", {"x": x, "y": y})
+        result["_description"] = f"🖱️ Mouse moved to ({x:.0f}, {y:.0f})"
+        return result
 
     @mcp.tool
     async def game_input_sequence(
@@ -358,7 +360,12 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             params["ref"] = ref
         if path:
             params["path"] = path
-        return await runtime.get("/state", params)
+        result = await runtime.get("/state", params)
+        if "error" not in result:
+            target = ref or path
+            node_type = result.get("type", "?")
+            result["_description"] = f"🔍 State of '{target}' ({node_type})"
+        return result
 
     @mcp.tool
     async def game_call_method(
@@ -388,7 +395,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             body["path"] = path
         if args:
             body["args"] = args
-        return await runtime.post("/call_method", body)
+        result = await runtime.post("/call_method", body)
+        target = ref or path
+        result["_description"] = f"📞 Called '{target}'.{method}()"
+        return result
 
     # --- Waiting ---
 
@@ -571,7 +581,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.get("/console")
+        result = await runtime.get("/console")
+        lines = len(result.get("output", "").split("\n")) if result.get("output") else 0
+        result["_description"] = f"📟 Console output ({lines} lines)"
+        return result
 
     # --- Snapshot Diff ---
 
@@ -596,7 +609,13 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.get("/snapshot/diff", {"depth": str(depth)})
+        result = await runtime.get("/snapshot/diff", {"depth": str(depth)})
+        if "error" not in result:
+            added = len(result.get("added", []))
+            removed = len(result.get("removed", []))
+            changed = len(result.get("changed", []))
+            result["_description"] = f"📊 Snapshot diff — {added} added, {removed} removed, {changed} changed"
+        return result
 
     # --- Scene History ---
 
@@ -612,7 +631,11 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.get("/scene_history")
+        result = await runtime.get("/scene_history")
+        if "error" not in result:
+            count = len(result.get("history", []))
+            result["_description"] = f"📜 Scene history — {count} event(s)"
+        return result
 
     # --- Info ---
 
@@ -627,7 +650,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.get("/info")
+        result = await runtime.get("/info")
+        scene = result.get("current_scene", "?")
+        result["_description"] = f"ℹ️ Game info — scene '{scene}'"
+        return result
 
     @mcp.tool
     async def game_list_actions() -> dict[str, Any]:
@@ -639,4 +665,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.get("/actions")
+        result = await runtime.get("/actions")
+        if "error" not in result:
+            count = len(result.get("actions", {}))
+            result["_description"] = f"🎮 {count} input action(s) available"
+        return result

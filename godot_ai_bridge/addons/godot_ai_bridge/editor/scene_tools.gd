@@ -231,6 +231,102 @@ static func list_node_properties(node_path: String) -> Dictionary:
 	}
 
 
+## Rename a node in the currently edited scene.
+static func rename_node(node_path: String, new_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	var old_name: String = str(node.name)
+	node.name = new_name
+
+	return {"ok": true, "old_name": old_name, "new_name": str(node.name), "new_path": str(root.get_path_to(node))}
+
+
+## Instance a PackedScene as a child of a node in the currently edited scene.
+static func instance_scene(scene_path: String, parent_path: String, node_name: String = "") -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var parent: Node = root if parent_path == "." or parent_path == "" else root.get_node_or_null(parent_path)
+	if parent == null:
+		return {"error": "Parent node not found: %s" % parent_path}
+
+	if not ResourceLoader.exists(scene_path):
+		return {"error": "Scene file not found: %s" % scene_path}
+
+	var packed: PackedScene = load(scene_path)
+	if packed == null:
+		return {"error": "Failed to load scene: %s" % scene_path}
+
+	var instance: Node = packed.instantiate()
+	if instance == null:
+		return {"error": "Failed to instantiate scene: %s" % scene_path}
+
+	if node_name != "":
+		instance.name = node_name
+
+	parent.add_child(instance)
+	instance.owner = root
+	_set_owner_recursive(instance, root)
+
+	return {"ok": true, "path": str(root.get_path_to(instance)), "name": str(instance.name), "type": instance.get_class()}
+
+
+## Find nodes in the current scene by name pattern, type, or group.
+static func find_nodes(name_pattern: String = "", type_name: String = "", group: String = "", in_path: String = "") -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var search_root: Node = root
+	if in_path != "" and in_path != ".":
+		search_root = root.get_node_or_null(in_path)
+		if search_root == null:
+			return {"error": "Search root not found: %s" % in_path}
+
+	var results: Array = []
+	_find_nodes_recursive(search_root, root, name_pattern, type_name, group, results)
+
+	return {"matches": results, "count": results.size()}
+
+
+## Recursively search for matching nodes.
+static func _find_nodes_recursive(node: Node, scene_root: Node, name_pattern: String, type_name: String, group: String, results: Array) -> void:
+	if str(node.name).begins_with("@"):
+		return
+
+	var matches: bool = true
+
+	if name_pattern != "":
+		if name_pattern.contains("*"):
+			matches = str(node.name).matchn(name_pattern)
+		else:
+			matches = str(node.name).to_lower().contains(name_pattern.to_lower())
+
+	if matches and type_name != "":
+		matches = node.is_class(type_name)
+
+	if matches and group != "":
+		matches = node.is_in_group(group)
+
+	if matches:
+		var info: Dictionary = {
+			"name": str(node.name),
+			"type": node.get_class(),
+			"path": str(scene_root.get_path_to(node)),
+		}
+		results.append(info)
+
+	for child: Node in node.get_children():
+		_find_nodes_recursive(child, scene_root, name_pattern, type_name, group, results)
+
+
 ## Recursively set owner on all children (so they save with the scene).
 static func _set_owner_recursive(node: Node, owner: Node) -> void:
 	for child: Node in node.get_children():

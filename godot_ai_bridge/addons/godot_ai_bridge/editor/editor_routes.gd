@@ -125,6 +125,46 @@ func handle_list_node_properties(request: BridgeHTTPServer.HTTPRequest) -> Dicti
 	return SceneTools.list_node_properties(path)
 
 
+## POST /node/rename
+func handle_rename_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var path: String = str(body.get("path", ""))
+	var new_name: String = str(body.get("new_name", ""))
+
+	if path == "":
+		return {"error": "Must provide 'path'"}
+	if new_name == "":
+		return {"error": "Must provide 'new_name'"}
+
+	return SceneTools.rename_node(path, new_name)
+
+
+## POST /node/instance_scene
+func handle_instance_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var scene_path: String = str(body.get("scene_path", ""))
+	var parent_path: String = str(body.get("parent_path", "."))
+	var node_name: String = str(body.get("name", ""))
+
+	if scene_path == "":
+		return {"error": "Must provide 'scene_path'"}
+
+	return SceneTools.instance_scene(scene_path, parent_path, node_name)
+
+
+## GET /node/find
+func handle_find_nodes(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+	var name_pattern: String = request.query_params.get("name", "")
+	var type_name: String = request.query_params.get("type", "")
+	var group: String = request.query_params.get("group", "")
+	var in_path: String = request.query_params.get("in", "")
+
+	if name_pattern == "" and type_name == "" and group == "":
+		return {"error": "Must provide at least one of: 'name', 'type', 'group'"}
+
+	return SceneTools.find_nodes(name_pattern, type_name, group, in_path)
+
+
 # --- Script Operations ---
 
 ## GET /script/read
