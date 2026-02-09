@@ -216,12 +216,18 @@ func _parse_query_string(query: String) -> Dictionary:
 
 
 ## Handle a complete HTTP request by routing to the appropriate handler.
+## Supports both synchronous and async (coroutine) handlers. When a handler
+## uses `await` internally, this function suspends and sends the response
+## once the handler completes. Called fire-and-forget from _process().
 func _handle_request(conn: ClientConnection) -> void:
 	var route_key: String = "%s %s" % [conn.request.method, conn.request.path]
 
 	if _routes.has(route_key):
 		var handler: Callable = _routes[route_key]
-		var result: Variant = handler.call(conn.request)
+		# await works for both sync and async handlers:
+		# - sync handlers return immediately with their value
+		# - async handlers suspend until their internal awaits complete
+		var result: Variant = await handler.call(conn.request)
 		if result is Dictionary or result is Array:
 			_send_json_response(conn.peer, 200, result)
 		elif result is String:

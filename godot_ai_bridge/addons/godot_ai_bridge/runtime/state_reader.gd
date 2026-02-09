@@ -185,18 +185,18 @@ static func _get_script_properties(node: Node) -> Dictionary:
 	return props
 
 
-## Get user-connected signal names.
+## Get user-connected signal names and their targets.
 static func _get_signal_connections(node: Node) -> Array:
 	var signals: Array = []
 	for sig: Dictionary in node.get_signal_list():
 		var sig_name: String = sig["name"]
 		var connections: Array = node.get_signal_connection_list(sig_name)
 		if connections.size() > 0:
-			var conn_info: Array = []
 			for conn: Dictionary in connections:
-				conn_info.append({
+				var callable_val: Variant = conn.get("callable", null)
+				var target_str: String = str(callable_val) if callable_val != null else "unknown"
+				signals.append({
 					"signal": sig_name,
-					"target": str(conn.get("callable", "")).get_base_dir(),
+					"callable": target_str,
 				})
-			signals.append_array(conn_info)
 	return signals

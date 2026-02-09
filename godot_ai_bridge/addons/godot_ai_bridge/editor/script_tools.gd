@@ -83,13 +83,41 @@ static func get_errors() -> Dictionary:
 	return {"errors": errors}
 
 
-## Get recent debugger/output text.
+## Get recent debugger/output text by reading the editor log file.
 static func get_debugger_output() -> Dictionary:
-	# The editor output panel is not directly accessible via EditorInterface.
-	# We return what we can access.
+	# Try reading the editor log file for recent output
+	var log_paths: Array[String] = [
+		"user://logs/godot.log",
+		"user://logs/editor.log",
+	]
+
+	for log_path: String in log_paths:
+		# Resolve the user:// path to an absolute path
+		var abs_path: String = ProjectSettings.globalize_path(log_path)
+		if FileAccess.file_exists(abs_path):
+			var file: FileAccess = FileAccess.open(abs_path, FileAccess.READ)
+			if file != null:
+				var content: String = file.get_as_text()
+				file.close()
+				# Return the last ~4000 characters (recent output)
+				if content.length() > 4000:
+					content = "...(truncated)\n" + content.substr(content.length() - 4000)
+				return {"output": content, "source": log_path, "length": content.length()}
+
+	# Fallback: try the global data dir logs
+	var global_log: String = OS.get_user_data_dir().path_join("logs/godot.log")
+	if FileAccess.file_exists(global_log):
+		var file: FileAccess = FileAccess.open(global_log, FileAccess.READ)
+		if file != null:
+			var content: String = file.get_as_text()
+			file.close()
+			if content.length() > 4000:
+				content = "...(truncated)\n" + content.substr(content.length() - 4000)
+			return {"output": content, "source": global_log, "length": content.length()}
+
 	return {
-		"note": "Direct output panel access is limited. Check the Output panel in the editor.",
-		"errors": [],
+		"output": "",
+		"note": "No log file found. Output panel is not directly accessible via EditorInterface.",
 	}
 
 

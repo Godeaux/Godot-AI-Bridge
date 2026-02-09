@@ -438,23 +438,31 @@ func _get_scene_root() -> Node:
 ## Wait for a signal with a timeout, returns [condition_met, elapsed_time].
 func _wait_for_signal_with_timeout(node: Node, sig_name: String, timeout_sec: float) -> Array:
 	var start: float = Time.get_ticks_msec() / 1000.0
-	var timed_out: bool = false
 
-	# Create a timer for timeout
-	var timer: SceneTreeTimer = _tree.create_timer(timeout_sec)
+	# Use a mutable container so the lambda can set the flag
+	var signal_received: Array = [false]
 
-	# Race between signal and timeout
-	var sig: Signal = Signal(node, sig_name)
-	# Use a simple polling approach since we can't easily race signals
-	var poll_interval: float = 0.05
-	var elapsed: float = 0.0
-	while elapsed < timeout_sec:
-		await _tree.create_timer(poll_interval).timeout
-		elapsed = (Time.get_ticks_msec() / 1000.0) - start
-		# We can't directly check if a signal fired without connecting to it,
-		# so this condition type is best-effort. For robust signal waiting,
-		# the AI should use property-based conditions instead.
-		break
+	# Determine signal argument count so we can unbind them from our 0-arg callback
+	var arg_count: int = 0
+	for sig: Dictionary in node.get_signal_list():
+		if sig["name"] == sig_name:
+			arg_count = sig["args"].size()
+			break
+
+	# Connect a one-shot callback that sets the flag when the signal fires.
+	# unbind(n) drops the n signal arguments so our no-arg lambda works.
+	var callback: Callable = (func() -> void: signal_received[0] = true).unbind(arg_count)
+	node.connect(sig_name, callback, CONNECT_ONE_SHOT)
+
+	# Poll until the signal fires or we time out
+	while not signal_received[0]:
+		var elapsed: float = (Time.get_ticks_msec() / 1000.0) - start
+		if elapsed >= timeout_sec:
+			# Clean up the connection on timeout (one-shot auto-disconnects on fire)
+			if node.is_connected(sig_name, callback):
+				node.disconnect(sig_name, callback)
+			return [false, elapsed]
+		await _tree.create_timer(0.05).timeout
 
 	var total_elapsed: float = (Time.get_ticks_msec() / 1000.0) - start
-	return [false, total_elapsed]
+	return [true, total_elapsed]
