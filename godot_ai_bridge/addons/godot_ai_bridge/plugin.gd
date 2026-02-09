@@ -24,8 +24,10 @@ func _enter_tree() -> void:
 	_editor_bridge.activity_panel = _activity_panel
 	add_child(_editor_bridge)
 
-	_activity_panel.set_status("Editor bridge on port %d — Waiting for AI" % BridgeConfig.EDITOR_PORT)
 	_activity_panel.log_action("SYSTEM", "/startup", "Editor bridge ready on port %d" % BridgeConfig.EDITOR_PORT)
+
+	# Make the panel visible immediately so new users see the setup instructions
+	make_bottom_panel_item_visible(_activity_panel)
 
 	print("[Godot AI Bridge] Plugin enabled — editor bridge on port %d" % BridgeConfig.EDITOR_PORT)
 
