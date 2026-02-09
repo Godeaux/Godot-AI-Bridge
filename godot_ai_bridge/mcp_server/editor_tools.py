@@ -282,15 +282,18 @@ def register_editor_tools(mcp: FastMCP) -> None:
             await asyncio.sleep(0.1)
             if await runtime.is_available():
                 info = await runtime.get("/info")
+                scene_name = info.get("current_scene", scene or "main scene")
                 return {
                     "ok": True,
                     "running": True,
+                    "_description": f"▶️ Game started — '{scene_name}'",
                     "game_info": info,
                 }
 
         return {
             "ok": True,
             "running": True,
+            "_description": "▶️ Game started (runtime bridge still connecting...)",
             "warning": "Game started but runtime bridge not yet reachable. Try game_snapshot in a moment.",
         }
 
@@ -301,7 +304,9 @@ def register_editor_tools(mcp: FastMCP) -> None:
         After stopping, runtime tools will no longer be available.
         Use this before editing code — changes require a restart to take effect.
         """
-        return await editor.post("/game/stop")
+        result = await editor.post("/game/stop")
+        result["_description"] = "⏹️ Game stopped"
+        return result
 
     @mcp.tool
     async def godot_is_game_running() -> dict[str, Any]:

@@ -8,6 +8,7 @@ Only available when the game is running.
 from __future__ import annotations
 
 import base64
+import time
 from typing import Any
 
 from fastmcp import FastMCP, Image
@@ -21,12 +22,34 @@ def _b64_image(b64_data: str) -> Image:
 
 GAME_NOT_RUNNING_MSG = "Game is not running. Use godot_run_game() to start it first."
 
+# Cache runtime availability to avoid a full HTTP round-trip on every tool call.
+# After a successful check, we trust the runtime is up for a short window.
+_runtime_cache: dict[str, float] = {"last_ok": 0.0}
+_CACHE_TTL = 5.0  # seconds
+
 
 async def _check_runtime() -> str | None:
-    """Return an error message if runtime is not available, None if OK."""
+    """Return an error message if runtime is not available, None if OK.
+
+    Uses a short TTL cache: after a successful check, skip re-checking for a
+    few seconds. This eliminates the double-request overhead on rapid tool
+    sequences while still detecting a stopped game within seconds.
+    """
+    now = time.monotonic()
+    if now - _runtime_cache["last_ok"] < _CACHE_TTL:
+        return None
     if not await runtime.is_available():
         return GAME_NOT_RUNNING_MSG
+    _runtime_cache["last_ok"] = now
     return None
+
+
+def _count_nodes(nodes: list[dict]) -> int:
+    """Count total nodes in a nested snapshot tree."""
+    count = len(nodes)
+    for node in nodes:
+        count += _count_nodes(node.get("children", []))
+    return count
 
 
 def register_runtime_tools(mcp: FastMCP) -> None:
@@ -69,9 +92,15 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if "error" in data:
             return [str(data["error"])]
 
-        # Build text summary
+        # Build human-readable summary for the user
         screenshot_data = data.pop("screenshot", None)
-        result: list[Any] = [data]
+        scene = data.get("scene_name", "unknown")
+        node_count = _count_nodes(data.get("nodes", []))
+        fps = data.get("fps", "?")
+        paused = " (PAUSED)" if data.get("paused") else ""
+        summary = f"📷 Snapshot of '{scene}' — {node_count} nodes, {fps} FPS{paused}, frame {data.get('frame', '?')}"
+
+        result: list[Any] = [summary, data]
 
         if screenshot_data:
             result.append(_b64_image(screenshot_data))
@@ -153,7 +182,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.post("/click", {"x": x, "y": y, "button": button})
+        result = await runtime.post("/click", {"x": x, "y": y, "button": button})
+        result["_description"] = f"🖱️ Clicked {button} at ({x:.0f}, {y:.0f})"
+        return result
 
     @mcp.tool
     async def game_click_node(ref: str = "", path: str = "") -> dict[str, Any]:
@@ -175,7 +206,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             body["ref"] = ref
         if path:
             body["path"] = path
-        return await runtime.post("/click_node", body)
+        result = await runtime.post("/click_node", body)
+        target = ref or path
+        result["_description"] = f"🖱️ Clicked node '{target}'"
+        return result
 
     @mcp.tool
     async def game_press_key(
@@ -197,7 +231,14 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.post("/key", {"key": key, "action": action, "duration": duration})
+        result = await runtime.post("/key", {"key": key, "action": action, "duration": duration})
+        if action == "hold" and duration > 0:
+            result["_description"] = f"⌨️ Held '{key}' for {duration}s"
+        elif action == "tap":
+            result["_description"] = f"⌨️ Tapped '{key}'"
+        else:
+            result["_description"] = f"⌨️ Key '{key}' {action}"
+        return result
 
     @mcp.tool
     async def game_trigger_action(
@@ -219,7 +260,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.post("/action", {"action": action, "pressed": pressed, "strength": strength})
+        result = await runtime.post("/action", {"action": action, "pressed": pressed, "strength": strength})
+        state = "pressed" if pressed else "released"
+        result["_description"] = f"🎮 Action '{action}' {state}"
+        return result
 
     @mcp.tool
     async def game_mouse_move(x: float, y: float) -> dict[str, Any]:
@@ -265,17 +309,23 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return [err]
 
+        # Estimate total duration from wait/hold steps for timeout
+        total_duration = sum(
+            step.get("wait", 0) + step.get("duration", 0) for step in steps
+        )
+        http_timeout = max(30.0, total_duration + 15.0)
         data = await runtime.post("/sequence", {
             "steps": steps,
             "snapshot_after": snapshot_after,
             "screenshot_after": screenshot_after,
-        })
+        }, timeout=http_timeout)
 
         if "error" in data:
             return [str(data["error"])]
 
         screenshot_data = data.pop("screenshot", None)
-        result: list[Any] = [data]
+        summary = f"🎮 Executed {len(steps)}-step input sequence"
+        result: list[Any] = [summary, data]
         if screenshot_data:
             result.append(_b64_image(screenshot_data))
         return result
@@ -362,17 +412,20 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return [err]
 
+        # Use a generous timeout: wait duration + 15s headroom for snapshot
+        http_timeout = seconds + 15.0
         data = await runtime.post("/wait", {
             "seconds": seconds,
             "snapshot": snapshot,
             "screenshot": screenshot,
-        }, )
+        }, timeout=http_timeout)
 
         if "error" in data:
             return [str(data["error"])]
 
         screenshot_data = data.pop("screenshot", None)
-        result: list[Any] = [data]
+        summary = f"⏱️ Waited {seconds}s"
+        result: list[Any] = [summary, data]
         if screenshot_data and isinstance(screenshot_data, str):
             result.append(_b64_image(screenshot_data))
         return result
@@ -430,7 +483,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if value is not None:
             body["value"] = value
 
-        data = await runtime.post("/wait_for", body)
+        http_timeout = timeout + 15.0
+        data = await runtime.post("/wait_for", body, timeout=http_timeout)
 
         if "error" in data:
             return [str(data["error"])]
@@ -442,7 +496,11 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         elif "screenshot" in data:
             screenshot_data = data.pop("screenshot", None)
 
-        result: list[Any] = [data]
+        met = data.get("condition_met", False)
+        elapsed = data.get("elapsed", "?")
+        status = "✅ met" if met else "⏳ timed out"
+        summary = f"⏱️ wait_for '{condition}' — {status} after {elapsed}s"
+        result: list[Any] = [summary, data]
         if screenshot_data and isinstance(screenshot_data, str):
             result.append(_b64_image(screenshot_data))
         return result
@@ -467,7 +525,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.post("/pause", {"paused": paused})
+        result = await runtime.post("/pause", {"paused": paused})
+        state = "⏸️ Game PAUSED" if paused else "▶️ Game RESUMED"
+        result["_description"] = state
+        return result
 
     @mcp.tool
     async def game_set_timescale(scale: float = 1.0) -> dict[str, Any]:
@@ -490,7 +551,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if err:
             return {"error": err}
 
-        return await runtime.post("/timescale", {"scale": scale})
+        result = await runtime.post("/timescale", {"scale": scale})
+        result["_description"] = f"⏩ Time scale set to {scale}x"
+        return result
 
     # --- Console & Diagnostics ---
 

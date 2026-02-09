@@ -35,6 +35,9 @@ var _active_connections: Array[ClientConnection] = []
 var _port: int = 0
 const CONNECTION_TIMEOUT: float = 30.0
 
+## Optional activity panel for logging requests. Set by the plugin.
+var activity_panel: Node = null
+
 
 ## Start the HTTP server on the given port.
 func start(port: int) -> Error:
@@ -183,19 +186,26 @@ func _try_parse_request(conn: ClientConnection) -> void:
 
 		conn.headers_parsed = true
 
-	# Check if body is complete
+	# Check if body is complete — use raw byte count, not string character count,
+	# because Content-Length is in bytes and multi-byte UTF-8 chars would mismatch.
 	if conn.headers_parsed:
-		var body_start: int = conn.header_end_index + 4  # "\r\n\r\n" is 4 chars
-		var body_bytes: int = data_str.length() - body_start
+		# Find the header/body boundary in the raw byte buffer
+		var separator: PackedByteArray = "\r\n\r\n".to_utf8_buffer()
+		var sep_pos: int = _find_bytes(conn.buffer, separator)
+		if sep_pos == -1:
+			return
+		var body_byte_start: int = sep_pos + 4
+		var body_byte_count: int = conn.buffer.size() - body_byte_start
 
-		if body_bytes >= conn.content_length:
+		if body_byte_count >= conn.content_length:
 			if conn.content_length > 0:
-				conn.request.body = data_str.substr(body_start, conn.content_length)
+				var body_slice: PackedByteArray = conn.buffer.slice(body_byte_start, body_byte_start + conn.content_length)
+				conn.request.body = body_slice.get_string_from_utf8()
 				# Try to parse JSON body
 				if conn.request.headers.get("content-type", "").find("application/json") != -1:
 					var json := JSON.new()
-					var err: Error = json.parse(conn.request.body)
-					if err == OK:
+					var parse_err: Error = json.parse(conn.request.body)
+					if parse_err == OK:
 						conn.request.json_body = json.data
 			conn.request.raw_complete = true
 
@@ -221,6 +231,9 @@ func _parse_query_string(query: String) -> Dictionary:
 ## once the handler completes. Called fire-and-forget from _process().
 func _handle_request(conn: ClientConnection) -> void:
 	var route_key: String = "%s %s" % [conn.request.method, conn.request.path]
+
+	# Log to activity panel if available
+	_log_activity(conn.request.method, conn.request.path)
 
 	if _routes.has(route_key):
 		var handler: Callable = _routes[route_key]
@@ -303,6 +316,29 @@ func send_error(peer: StreamPeerTCP, status_code: int, message: String) -> void:
 func _close_connection(conn: ClientConnection) -> void:
 	if conn.peer != null:
 		conn.peer.disconnect_from_host()
+
+
+## Log an incoming request to the activity panel (if attached).
+func _log_activity(method: String, path: String) -> void:
+	if activity_panel != null and activity_panel.has_method("log_action"):
+		activity_panel.log_action(method, path)
+
+
+## Find a byte sequence in a PackedByteArray. Returns index or -1.
+func _find_bytes(haystack: PackedByteArray, needle: PackedByteArray) -> int:
+	var h_size: int = haystack.size()
+	var n_size: int = needle.size()
+	if n_size == 0 or n_size > h_size:
+		return -1
+	for i: int in range(h_size - n_size + 1):
+		var found: bool = true
+		for j: int in range(n_size):
+			if haystack[i + j] != needle[j]:
+				found = false
+				break
+		if found:
+			return i
+	return -1
 
 
 ## Get HTTP status text for common codes.
