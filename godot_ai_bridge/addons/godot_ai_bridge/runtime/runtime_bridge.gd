@@ -51,62 +51,62 @@ func _exit_tree() -> void:
 
 # Route handler wrappers — delegate to RuntimeRoutes
 
-func _on_snapshot(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_snapshot(request)
 
-func _on_screenshot(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_screenshot(request)
 
-func _on_screenshot_node(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_screenshot_node(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_screenshot_node(request)
 
-func _on_click(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_click(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_click(request)
 
-func _on_click_node(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_click_node(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_click_node(request)
 
-func _on_key(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_key(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_key(request)
 
-func _on_action(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_action(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_action(request)
 
-func _on_actions(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_actions(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_actions(request)
 
-func _on_mouse_move(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_mouse_move(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_mouse_move(request)
 
-func _on_sequence(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_sequence(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_sequence(request)
 
-func _on_state(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_state(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_state(request)
 
-func _on_call_method(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_call_method(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_call_method(request)
 
-func _on_wait(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_wait(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_wait(request)
 
-func _on_wait_for(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_wait_for(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return await _routes_handler.handle_wait_for(request)
 
-func _on_info(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_info(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_info(request)
 
-func _on_pause(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_pause(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_pause(request)
 
-func _on_timescale(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_timescale(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_timescale(request)
 
-func _on_console(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_console(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_console(request)
 
-func _on_snapshot_diff(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_snapshot_diff(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_snapshot_diff(request)
 
-func _on_scene_history(request: BridgeHTTPServer.HTTPRequest) -> Variant:
+func _on_scene_history(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_scene_history(request)

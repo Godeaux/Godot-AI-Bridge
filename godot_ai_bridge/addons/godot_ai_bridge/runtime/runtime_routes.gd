@@ -21,7 +21,7 @@ func _init(tree: SceneTree) -> void:
 
 
 ## GET /snapshot — Primary observation channel.
-func handle_snapshot(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var root: Node = _get_scene_root()
 	if root == null:
 		return {"error": "No active scene"}
@@ -54,7 +54,7 @@ func handle_snapshot(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /screenshot — Capture the running game viewport.
-func handle_screenshot(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var width: int = int(request.query_params.get("width", str(BridgeConfig.DEFAULT_SCREENSHOT_WIDTH)))
 	var height: int = int(request.query_params.get("height", str(BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT)))
 	var viewport: Viewport = _tree.root
@@ -66,7 +66,7 @@ func handle_screenshot(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /screenshot/node — Capture a specific node's region.
-func handle_screenshot_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_screenshot_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var ref: String = request.query_params.get("ref", "")
 	var path: String = request.query_params.get("path", "")
 	var width: int = int(request.query_params.get("width", "0"))
@@ -91,7 +91,7 @@ func handle_screenshot_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary
 
 
 ## POST /click — Click at screen coordinates.
-func handle_click(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_click(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var x: float = float(body.get("x", 0))
 	var y: float = float(body.get("y", 0))
@@ -108,7 +108,7 @@ func handle_click(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /click_node — Click a node by ref or path.
-func handle_click_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_click_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var ref: String = str(body.get("ref", ""))
 	var path: String = str(body.get("path", ""))
@@ -135,7 +135,7 @@ func handle_click_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /key — Inject a key event.
-func handle_key(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_key(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var key_name: String = str(body.get("key", ""))
 	var action: String = str(body.get("action", "tap"))
@@ -149,7 +149,7 @@ func handle_key(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /action — Inject an InputMap action.
-func handle_action(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_action(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var action_name: String = str(body.get("action", ""))
 	var pressed: bool = body.get("pressed", true)
@@ -163,7 +163,7 @@ func handle_action(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /actions — List available InputMap actions.
-func handle_actions(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_actions(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var actions: Dictionary = {}
 	for action_name: StringName in InputMap.get_actions():
 		var name_str: String = str(action_name)
@@ -184,7 +184,7 @@ func handle_actions(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /mouse_move — Inject mouse motion.
-func handle_mouse_move(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_mouse_move(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var x: float = float(body.get("x", 0))
 	var y: float = float(body.get("y", 0))
@@ -196,7 +196,7 @@ func handle_mouse_move(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /sequence — Execute a sequence of input steps.
-func handle_sequence(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_sequence(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var steps: Array = body.get("steps", [])
 	var snapshot_after: bool = body.get("snapshot_after", false)
@@ -214,18 +214,18 @@ func handle_sequence(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 	if snapshot_after or screenshot_after:
 		await _tree.create_timer(0.1).timeout
 		if snapshot_after:
-			var snap_request := BridgeHTTPServer.HTTPRequest.new()
+			var snap_request := BridgeHTTPServer.BridgeRequest.new()
 			snap_request.query_params = {"include_screenshot": "true" if screenshot_after else "false"}
 			return await handle_snapshot(snap_request)
 		elif screenshot_after:
-			var ss_request := BridgeHTTPServer.HTTPRequest.new()
+			var ss_request := BridgeHTTPServer.BridgeRequest.new()
 			return await handle_screenshot(ss_request)
 
 	return {"ok": true}
 
 
 ## GET /state — Deep state for a single node.
-func handle_state(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_state(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var ref: String = request.query_params.get("ref", "")
 	var path: String = request.query_params.get("path", "")
 
@@ -245,7 +245,7 @@ func handle_state(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /call_method — Call a method on a node.
-func handle_call_method(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_call_method(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var ref: String = str(body.get("ref", ""))
 	var path: String = str(body.get("path", ""))
@@ -275,7 +275,7 @@ func handle_call_method(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /wait — Wait then return snapshot/screenshot.
-func handle_wait(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_wait(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var seconds: float = float(body.get("seconds", 1.0))
 	var do_snapshot: bool = body.get("snapshot", true)
@@ -286,12 +286,12 @@ func handle_wait(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 	var result: Dictionary = {"waited": seconds}
 
 	if do_snapshot:
-		var snap_request := BridgeHTTPServer.HTTPRequest.new()
+		var snap_request := BridgeHTTPServer.BridgeRequest.new()
 		snap_request.query_params = {"include_screenshot": "true" if do_screenshot else "false"}
 		var snap: Dictionary = await handle_snapshot(snap_request)
 		result.merge(snap)
 	elif do_screenshot:
-		var ss_request := BridgeHTTPServer.HTTPRequest.new()
+		var ss_request := BridgeHTTPServer.BridgeRequest.new()
 		var ss: Dictionary = await handle_screenshot(ss_request)
 		result["screenshot"] = ss.get("image", null)
 
@@ -299,7 +299,7 @@ func handle_wait(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /wait_for — Wait for a condition then return.
-func handle_wait_for(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_wait_for(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var condition: String = str(body.get("condition", ""))
 	var ref: String = str(body.get("ref", ""))
@@ -385,12 +385,12 @@ func handle_wait_for(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 	}
 
 	if do_snapshot:
-		var snap_request := BridgeHTTPServer.HTTPRequest.new()
+		var snap_request := BridgeHTTPServer.BridgeRequest.new()
 		snap_request.query_params = {"include_screenshot": "true" if do_screenshot else "false"}
 		var snap: Dictionary = await handle_snapshot(snap_request)
 		result["snapshot"] = snap
 	if do_screenshot and not do_snapshot:
-		var ss_request := BridgeHTTPServer.HTTPRequest.new()
+		var ss_request := BridgeHTTPServer.BridgeRequest.new()
 		var ss: Dictionary = await handle_screenshot(ss_request)
 		result["screenshot"] = ss.get("image", null)
 
@@ -398,7 +398,7 @@ func handle_wait_for(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /info — General game information.
-func handle_info(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_info(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var root: Node = _get_scene_root()
 	var current_scene_path: String = ""
 	if root and root.scene_file_path != "":
@@ -435,7 +435,7 @@ func handle_info(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /pause — Pause or unpause the game.
-func handle_pause(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_pause(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var paused: bool = body.get("paused", true)
 
@@ -444,7 +444,7 @@ func handle_pause(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /timescale — Set the game time scale.
-func handle_timescale(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_timescale(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var scale: float = float(body.get("scale", 1.0))
 
@@ -455,7 +455,7 @@ func handle_timescale(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /console — Get recent game console/log output.
-func handle_console(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_console(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	# Read from the game's log file
 	var log_path: String = OS.get_user_data_dir().path_join("logs/godot.log")
 	if not FileAccess.file_exists(log_path):
@@ -487,7 +487,7 @@ func handle_console(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /snapshot/diff — Compare current snapshot to previous one.
-func handle_snapshot_diff(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_snapshot_diff(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var root: Node = _get_scene_root()
 	if root == null:
 		return {"error": "No active scene"}
@@ -516,7 +516,7 @@ func handle_snapshot_diff(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /scene_history — Get recent scene tree change events.
-func handle_scene_history(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_scene_history(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return {
 		"events": _scene_history,
 		"count": _scene_history.size(),
