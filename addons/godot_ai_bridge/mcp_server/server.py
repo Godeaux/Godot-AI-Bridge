@@ -43,6 +43,12 @@ mcp = FastMCP(
         "When you encounter ANY error from these tools, your job is to diagnose "
         "and fix it — not to report it to the user and stop. You have full access "
         "to read and write scripts, inspect logs, and restart the game. Use that.\n\n"
+        "If the fix is unambiguous (typo, missing node, wrong method name, etc.), "
+        "just fix it and move on. If the fix is genuinely ambiguous — meaning there "
+        "are multiple valid approaches and the developer's intent is unclear — "
+        "briefly present the options to the user and ask which they prefer before "
+        "proceeding. But do NOT ask the user about things you can figure out "
+        "yourself from the code and error context.\n\n"
 
         "## Startup Gating (strict mode)\n\n"
         "Always launch the game with `godot_run_game(strict=true)`.  If the "
