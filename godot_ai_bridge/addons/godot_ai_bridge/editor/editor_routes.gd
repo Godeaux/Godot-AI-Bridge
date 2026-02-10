@@ -273,7 +273,9 @@ func handle_run_game(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 
 ## POST /game/stop
 func handle_stop_game(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	EditorInterface.stop_playing_scene()
+	# Defer the stop call so the HTTP response is sent before the editor
+	# tears down the running game (same rationale as handle_run_game).
+	EditorInterface.call_deferred("stop_playing_scene")
 	return {"ok": true, "running": false}
 
 

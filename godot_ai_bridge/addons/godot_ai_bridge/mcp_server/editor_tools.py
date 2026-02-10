@@ -22,6 +22,19 @@ def _b64_image(b64_data: str) -> dict[str, str]:
     return {"type": "image", "data": b64_data, "mimeType": "image/jpeg"}
 
 
+# Markers that indicate an error line in Godot console / log output.
+_ERROR_MARKERS = ("error", "exception", "traceback", "script error", "node not found")
+
+
+def _is_error_line(line: str) -> bool:
+    """Return True if *line* looks like an error in Godot output."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    return any(m in lowered for m in _ERROR_MARKERS)
+
+
 def register_editor_tools(mcp: FastMCP) -> None:
     """Register all editor tools with the MCP server."""
 
@@ -452,19 +465,48 @@ def register_editor_tools(mcp: FastMCP) -> None:
             if await runtime.is_available():
                 info = await runtime.get("/info")
                 scene_name = info.get("current_scene", scene or "main scene")
-                return {
+                response: dict[str, Any] = {
                     "ok": True,
                     "running": True,
                     "_description": f"▶️ Game started — '{scene_name}'",
                     "game_info": info,
                 }
+                # Fetch console output to surface any startup errors
+                # (e.g. "Node not found", push_error messages).
+                try:
+                    console = await runtime.get("/console")
+                    console_output = console.get("output", "")
+                    if console_output:
+                        error_lines = [
+                            line.strip() for line in console_output.split("\n")
+                            if _is_error_line(line)
+                        ]
+                        if error_lines:
+                            response["runtime_errors"] = error_lines
+                except Exception:
+                    pass  # Console fetch is best-effort
+                return response
 
-        return {
-            "ok": True,
-            "running": True,
-            "_description": "▶️ Game started (runtime bridge still connecting...)",
-            "warning": "Game started but runtime bridge not yet reachable. Try game_snapshot in a moment.",
+        # Runtime bridge never connected — the game likely crashed on startup.
+        response = {
+            "ok": False,
+            "running": False,
+            "_description": "❌ Game failed to start — runtime bridge never connected",
         }
+        # Try to get debugger/editor output for crash details.
+        try:
+            debugger = await editor.get("/debugger/output")
+            debugger_output = debugger.get("output", "")
+            if debugger_output:
+                error_lines = [
+                    line.strip() for line in debugger_output.split("\n")
+                    if _is_error_line(line)
+                ]
+                if error_lines:
+                    response["debugger_errors"] = error_lines
+        except Exception:
+            pass  # Editor may also be unreachable
+        return response
 
     @mcp.tool
     async def godot_stop_game() -> dict[str, Any]:
