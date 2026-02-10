@@ -25,6 +25,15 @@ func _ready() -> void:
 	register_route("POST", "/node/instance_scene", _routes_handler.handle_instance_scene)
 	register_route("GET", "/node/find", _routes_handler.handle_find_nodes)
 
+	# Signal operations
+	register_route("GET", "/node/signals", _routes_handler.handle_list_signals)
+	register_route("POST", "/node/connect_signal", _routes_handler.handle_connect_signal)
+	register_route("POST", "/node/disconnect_signal", _routes_handler.handle_disconnect_signal)
+
+	# Group operations
+	register_route("POST", "/node/add_to_group", _routes_handler.handle_add_to_group)
+	register_route("POST", "/node/remove_from_group", _routes_handler.handle_remove_from_group)
+
 	# Script operations
 	register_route("GET", "/script/read", _routes_handler.handle_read_script)
 	register_route("POST", "/script/write", _routes_handler.handle_write_script)
@@ -38,6 +47,12 @@ func _ready() -> void:
 	register_route("GET", "/project/input_map", _routes_handler.handle_input_map)
 	register_route("GET", "/project/settings", _routes_handler.handle_project_settings)
 	register_route("GET", "/project/autoloads", _routes_handler.handle_autoloads)
+
+	# Input map editing
+	register_route("POST", "/project/input_map/add_action", _routes_handler.handle_add_input_action)
+	register_route("POST", "/project/input_map/remove_action", _routes_handler.handle_remove_input_action)
+	register_route("POST", "/project/input_map/add_binding", _routes_handler.handle_add_input_binding)
+	register_route("POST", "/project/input_map/remove_binding", _routes_handler.handle_remove_input_binding)
 
 	# Run control
 	register_route("POST", "/game/run", _routes_handler.handle_run_game)

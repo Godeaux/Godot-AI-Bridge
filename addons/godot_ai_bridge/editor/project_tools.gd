@@ -197,6 +197,117 @@ static func _search_recursive(path: String, pattern: String, query: String, matc
 	dir.list_dir_end()
 
 
+## Add a new input action to ProjectSettings.
+static func add_input_action(action_name: String, deadzone: float = 0.5) -> Dictionary:
+	var setting_key: String = "input/" + action_name
+	if ProjectSettings.has_setting(setting_key):
+		return {"error": "Action '%s' already exists" % action_name}
+
+	var action_data: Dictionary = {
+		"deadzone": deadzone,
+		"events": [],
+	}
+	ProjectSettings.set_setting(setting_key, action_data)
+	var err: Error = ProjectSettings.save()
+	if err != OK:
+		return {"error": "Failed to save project settings: %s" % error_string(err)}
+
+	return {"ok": true, "action": action_name, "deadzone": deadzone}
+
+
+## Remove an input action from ProjectSettings.
+static func remove_input_action(action_name: String) -> Dictionary:
+	var setting_key: String = "input/" + action_name
+	if not ProjectSettings.has_setting(setting_key):
+		return {"error": "Action '%s' does not exist" % action_name}
+
+	ProjectSettings.set_setting(setting_key, null)
+	var err: Error = ProjectSettings.save()
+	if err != OK:
+		return {"error": "Failed to save project settings: %s" % error_string(err)}
+
+	return {"ok": true, "removed": action_name}
+
+
+## Add a key binding to an existing input action.
+static func add_input_binding(action_name: String, event_type: String, value: String) -> Dictionary:
+	var setting_key: String = "input/" + action_name
+	if not ProjectSettings.has_setting(setting_key):
+		return {"error": "Action '%s' does not exist — create it first with add_input_action" % action_name}
+
+	var action_data: Variant = ProjectSettings.get_setting(setting_key)
+	if not action_data is Dictionary:
+		return {"error": "Unexpected action data format for '%s'" % action_name}
+
+	var events: Array = action_data.get("events", [])
+	var event: InputEvent = null
+
+	match event_type:
+		"key":
+			var key_event := InputEventKey.new()
+			var keycode: Key = OS.find_keycode_from_string(value)
+			if keycode == KEY_NONE:
+				return {"error": "Unknown key: '%s'" % value}
+			key_event.keycode = keycode
+			event = key_event
+		"mouse_button":
+			var mb_event := InputEventMouseButton.new()
+			var button_idx: int = int(value)
+			if button_idx < 1 or button_idx > 9:
+				return {"error": "Invalid mouse button index: '%s' (expected 1-9)" % value}
+			mb_event.button_index = button_idx as MouseButton
+			event = mb_event
+		"joypad_button":
+			var joy_event := InputEventJoypadButton.new()
+			var btn_idx: int = int(value)
+			joy_event.button_index = btn_idx as JoyButton
+			event = joy_event
+		"joypad_motion":
+			# value format: "axis:direction" e.g. "0:1" or "1:-1"
+			var parts: PackedStringArray = value.split(":")
+			if parts.size() != 2:
+				return {"error": "Joypad motion value must be 'axis:direction' (e.g., '0:1'), got: '%s'" % value}
+			var motion_event := InputEventJoypadMotion.new()
+			motion_event.axis = int(parts[0]) as JoyAxis
+			motion_event.axis_value = float(parts[1])
+			event = motion_event
+		_:
+			return {"error": "Unknown event_type: '%s' (expected: key, mouse_button, joypad_button, joypad_motion)" % event_type}
+
+	events.append(event)
+	action_data["events"] = events
+	ProjectSettings.set_setting(setting_key, action_data)
+	var err: Error = ProjectSettings.save()
+	if err != OK:
+		return {"error": "Failed to save project settings: %s" % error_string(err)}
+
+	return {"ok": true, "action": action_name, "binding_count": events.size()}
+
+
+## Remove a binding from an input action by index.
+static func remove_input_binding(action_name: String, binding_index: int) -> Dictionary:
+	var setting_key: String = "input/" + action_name
+	if not ProjectSettings.has_setting(setting_key):
+		return {"error": "Action '%s' does not exist" % action_name}
+
+	var action_data: Variant = ProjectSettings.get_setting(setting_key)
+	if not action_data is Dictionary:
+		return {"error": "Unexpected action data format for '%s'" % action_name}
+
+	var events: Array = action_data.get("events", [])
+	if binding_index < 0 or binding_index >= events.size():
+		return {"error": "Binding index %d out of range (action '%s' has %d binding(s))" % [binding_index, action_name, events.size()]}
+
+	events.remove_at(binding_index)
+	action_data["events"] = events
+	ProjectSettings.set_setting(setting_key, action_data)
+	var err: Error = ProjectSettings.save()
+	if err != OK:
+		return {"error": "Failed to save project settings: %s" % error_string(err)}
+
+	return {"ok": true, "action": action_name, "binding_count": events.size()}
+
+
 ## Simple glob pattern matching (supports * and ?).
 static func _glob_match(text: String, pattern: String) -> bool:
 	return text.matchn(pattern)

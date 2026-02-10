@@ -377,6 +377,192 @@ def register_editor_tools(mcp: FastMCP) -> None:
             result["_description"] = f"🔍 Found {count} node(s) matching {criteria}"
         return result
 
+    # --- Signal Tools ---
+
+    @mcp.tool
+    async def godot_list_signals(path: str) -> dict[str, Any]:
+        """List all signals on a node and their current connections.
+
+        Returns every signal defined on the node (both built-in and custom),
+        along with argument info and any existing connections. Useful for
+        understanding what signals are available before connecting them.
+
+        Args:
+            path: Node path ('.' for root, 'Player', 'UI/Button', etc.).
+        """
+        result = await editor.get("/node/signals", {"path": path})
+        if "error" not in result and "_description" not in result:
+            connected = sum(len(s.get("connections", [])) for s in result.get("signals", []))
+            result["_description"] = f"📡 {result.get('count', '?')} signal(s) on '{result.get('node', path)}', {connected} connection(s)"
+        return result
+
+    @mcp.tool
+    async def godot_connect_signal(
+        source: str,
+        signal_name: str,
+        target: str,
+        method: str,
+    ) -> dict[str, Any]:
+        """Connect a signal from one node to a method on another node.
+
+        This creates a signal connection in the editor scene. The connection
+        will be saved with the scene and persist across runs.
+
+        Args:
+            source: Node path of the signal emitter (e.g., 'UI/StartButton').
+            signal_name: Name of the signal to connect (e.g., 'pressed', 'body_entered').
+            target: Node path of the receiver (e.g., '.', 'GameManager').
+            method: Method name on the target to call (e.g., '_on_start_pressed').
+        """
+        result = await editor.post("/node/connect_signal", {
+            "source": source,
+            "signal": signal_name,
+            "target": target,
+            "method": method,
+        })
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🔗 Connected '{source}'.{signal_name} → '{target}'.{method}()"
+        return result
+
+    @mcp.tool
+    async def godot_disconnect_signal(
+        source: str,
+        signal_name: str,
+        target: str,
+        method: str,
+    ) -> dict[str, Any]:
+        """Disconnect a signal connection between two nodes.
+
+        Args:
+            source: Node path of the signal emitter.
+            signal_name: Name of the signal to disconnect.
+            target: Node path of the receiver.
+            method: Method name on the target that was connected.
+        """
+        result = await editor.post("/node/disconnect_signal", {
+            "source": source,
+            "signal": signal_name,
+            "target": target,
+            "method": method,
+        })
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🔌 Disconnected '{source}'.{signal_name} → '{target}'.{method}()"
+        return result
+
+    # --- Group Tools ---
+
+    @mcp.tool
+    async def godot_add_to_group(path: str, group: str) -> dict[str, Any]:
+        """Add a node to a group.
+
+        Groups are used to organize nodes (e.g., 'enemies', 'collectibles',
+        'interactable'). Nodes in a group can be found with godot_find_nodes(group=...).
+
+        Args:
+            path: Node path (e.g., 'Player', 'Enemies/Goblin').
+            group: Group name to add the node to (e.g., 'enemies', 'persistent').
+        """
+        result = await editor.post("/node/add_to_group", {"path": path, "group": group})
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🏷️ Added '{path}' to group '{group}'"
+        return result
+
+    @mcp.tool
+    async def godot_remove_from_group(path: str, group: str) -> dict[str, Any]:
+        """Remove a node from a group.
+
+        Args:
+            path: Node path (e.g., 'Player', 'Enemies/Goblin').
+            group: Group name to remove the node from.
+        """
+        result = await editor.post("/node/remove_from_group", {"path": path, "group": group})
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🏷️ Removed '{path}' from group '{group}'"
+        return result
+
+    # --- Input Map Tools ---
+
+    @mcp.tool
+    async def godot_add_input_action(
+        action: str,
+        deadzone: float = 0.5,
+    ) -> dict[str, Any]:
+        """Add a new input action to the project's InputMap.
+
+        Creates an action with no bindings. Use godot_add_input_binding to
+        add key/button bindings after creation.
+
+        Args:
+            action: Action name (e.g., 'jump', 'attack', 'move_left').
+            deadzone: Analog deadzone threshold (0.0–1.0, default 0.5).
+        """
+        result = await editor.post("/project/input_map/add_action", {
+            "action": action,
+            "deadzone": deadzone,
+        })
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🎮 Added input action '{action}'"
+        return result
+
+    @mcp.tool
+    async def godot_remove_input_action(action: str) -> dict[str, Any]:
+        """Remove an input action and all its bindings from the project.
+
+        Args:
+            action: Action name to remove (e.g., 'jump', 'attack').
+        """
+        result = await editor.post("/project/input_map/remove_action", {"action": action})
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🎮 Removed input action '{action}'"
+        return result
+
+    @mcp.tool
+    async def godot_add_input_binding(
+        action: str,
+        event_type: str,
+        value: str,
+    ) -> dict[str, Any]:
+        """Add a key/button binding to an existing input action.
+
+        The action must already exist (use godot_add_input_action first, or
+        check godot_get_input_map to see existing actions).
+
+        Args:
+            action: Action name to bind to (e.g., 'jump').
+            event_type: One of 'key', 'mouse_button', 'joypad_button', 'joypad_motion'.
+            value: The binding value, depends on event_type:
+                   - key: Key name like 'Space', 'W', 'A', 'D', 'Escape', 'Shift', 'Up', 'Down'.
+                   - mouse_button: Button index as string ('1' = left, '2' = right, '3' = middle).
+                   - joypad_button: Button index as string ('0', '1', '2', etc.).
+                   - joypad_motion: 'axis:direction' like '0:1' (left stick right) or '1:-1' (left stick up).
+        """
+        result = await editor.post("/project/input_map/add_binding", {
+            "action": action,
+            "event_type": event_type,
+            "value": value,
+        })
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🎮 Added {event_type} binding '{value}' to '{action}'"
+        return result
+
+    @mcp.tool
+    async def godot_remove_input_binding(action: str, index: int) -> dict[str, Any]:
+        """Remove a specific binding from an input action by index.
+
+        Use godot_get_input_map to see current bindings and their indices.
+
+        Args:
+            action: Action name (e.g., 'jump').
+            index: 0-based index of the binding to remove.
+        """
+        result = await editor.post("/project/input_map/remove_binding", {
+            "action": action,
+            "index": index,
+        })
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"🎮 Removed binding #{index} from '{action}'"
+        return result
+
     # --- Script Tools ---
 
     @mcp.tool

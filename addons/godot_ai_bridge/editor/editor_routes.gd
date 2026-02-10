@@ -222,6 +222,104 @@ func handle_find_nodes(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return result
 
 
+# --- Signal Operations ---
+
+## GET /node/signals
+func handle_list_signals(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var path: String = request.query_params.get("path", "")
+	if path == "":
+		return {"error": "Must provide 'path' query param"}
+	var result: Dictionary = _SceneTools.list_signals(path)
+	if not result.has("error"):
+		var connected: int = 0
+		for sig: Dictionary in result.get("signals", []):
+			connected += sig.get("connections", []).size()
+		result["_description"] = "📡 %d signal(s) on '%s' (%s), %d connection(s)" % [result.get("count", 0), result.get("node", path), result.get("type", "?"), connected]
+	return result
+
+
+## POST /node/connect_signal
+func handle_connect_signal(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var source: String = str(body.get("source", ""))
+	var signal_name: String = str(body.get("signal", ""))
+	var target: String = str(body.get("target", ""))
+	var method: String = str(body.get("method", ""))
+
+	if source == "":
+		return {"error": "Must provide 'source'"}
+	if signal_name == "":
+		return {"error": "Must provide 'signal'"}
+	if target == "":
+		return {"error": "Must provide 'target'"}
+	if method == "":
+		return {"error": "Must provide 'method'"}
+
+	var result: Dictionary = _SceneTools.connect_signal(source, signal_name, target, method)
+	if result.has("ok"):
+		result["_description"] = "🔗 Connected '%s'.%s → '%s'.%s()" % [source, signal_name, target, method]
+	return result
+
+
+## POST /node/disconnect_signal
+func handle_disconnect_signal(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var source: String = str(body.get("source", ""))
+	var signal_name: String = str(body.get("signal", ""))
+	var target: String = str(body.get("target", ""))
+	var method: String = str(body.get("method", ""))
+
+	if source == "":
+		return {"error": "Must provide 'source'"}
+	if signal_name == "":
+		return {"error": "Must provide 'signal'"}
+	if target == "":
+		return {"error": "Must provide 'target'"}
+	if method == "":
+		return {"error": "Must provide 'method'"}
+
+	var result: Dictionary = _SceneTools.disconnect_signal(source, signal_name, target, method)
+	if result.has("ok"):
+		result["_description"] = "🔌 Disconnected '%s'.%s → '%s'.%s()" % [source, signal_name, target, method]
+	return result
+
+
+# --- Group Operations ---
+
+## POST /node/add_to_group
+func handle_add_to_group(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var path: String = str(body.get("path", ""))
+	var group: String = str(body.get("group", ""))
+
+	if path == "":
+		return {"error": "Must provide 'path'"}
+	if group == "":
+		return {"error": "Must provide 'group'"}
+
+	var result: Dictionary = _SceneTools.add_to_group(path, group)
+	if result.has("ok"):
+		result["_description"] = "🏷️ Added '%s' to group '%s'" % [path, group]
+	return result
+
+
+## POST /node/remove_from_group
+func handle_remove_from_group(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var path: String = str(body.get("path", ""))
+	var group: String = str(body.get("group", ""))
+
+	if path == "":
+		return {"error": "Must provide 'path'"}
+	if group == "":
+		return {"error": "Must provide 'group'"}
+
+	var result: Dictionary = _SceneTools.remove_from_group(path, group)
+	if result.has("ok"):
+		result["_description"] = "🏷️ Removed '%s' from group '%s'" % [path, group]
+	return result
+
+
 # --- Script Operations ---
 
 ## GET /script/read
@@ -333,6 +431,74 @@ func handle_autoloads(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var result: Dictionary = _ProjectTools.get_autoloads()
 	if not result.has("error"):
 		result["_description"] = "🔌 %d autoload(s)" % result.get("autoloads", {}).size()
+	return result
+
+
+# --- Input Map Operations ---
+
+## POST /project/input_map/add_action
+func handle_add_input_action(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var action: String = str(body.get("action", ""))
+	var deadzone: float = float(body.get("deadzone", 0.5))
+
+	if action == "":
+		return {"error": "Must provide 'action'"}
+
+	var result: Dictionary = _ProjectTools.add_input_action(action, deadzone)
+	if result.has("ok"):
+		result["_description"] = "🎮 Added input action '%s' (deadzone: %s)" % [action, str(deadzone)]
+	return result
+
+
+## POST /project/input_map/remove_action
+func handle_remove_input_action(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var action: String = str(body.get("action", ""))
+
+	if action == "":
+		return {"error": "Must provide 'action'"}
+
+	var result: Dictionary = _ProjectTools.remove_input_action(action)
+	if result.has("ok"):
+		result["_description"] = "🎮 Removed input action '%s'" % action
+	return result
+
+
+## POST /project/input_map/add_binding
+func handle_add_input_binding(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var action: String = str(body.get("action", ""))
+	var event_type: String = str(body.get("event_type", ""))
+	var value: String = str(body.get("value", ""))
+
+	if action == "":
+		return {"error": "Must provide 'action'"}
+	if event_type == "":
+		return {"error": "Must provide 'event_type'"}
+	if value == "":
+		return {"error": "Must provide 'value'"}
+
+	var result: Dictionary = _ProjectTools.add_input_binding(action, event_type, value)
+	if result.has("ok"):
+		result["_description"] = "🎮 Added %s binding '%s' to action '%s'" % [event_type, value, action]
+	return result
+
+
+## POST /project/input_map/remove_binding
+func handle_remove_input_binding(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var action: String = str(body.get("action", ""))
+	var index: int = int(body.get("index", -1))
+
+	if action == "":
+		return {"error": "Must provide 'action'"}
+	if index < 0:
+		return {"error": "Must provide 'index' (0-based binding index)"}
+
+	var result: Dictionary = _ProjectTools.remove_input_binding(action, index)
+	if result.has("ok"):
+		result["_description"] = "🎮 Removed binding #%d from action '%s'" % [index, action]
 	return result
 
 

@@ -348,6 +348,141 @@ static func _create_node_by_type(type_name: String) -> Node:
 	return null
 
 
+## List all signals on a node, including their current connections.
+static func list_signals(node_path: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	var signals: Array = []
+	for sig: Dictionary in node.get_signal_list():
+		var sig_name: String = sig["name"]
+		var connections: Array = []
+		for conn: Dictionary in node.get_signal_connection_list(sig_name):
+			connections.append({
+				"target": str(root.get_path_to(conn["callable"].get_object())),
+				"method": conn["callable"].get_method(),
+			})
+		var sig_info: Dictionary = {
+			"name": sig_name,
+			"args": [],
+			"connections": connections,
+		}
+		for arg: Dictionary in sig.get("args", []):
+			sig_info["args"].append({
+				"name": arg.get("name", ""),
+				"type": type_string(arg.get("type", TYPE_NIL)),
+			})
+		signals.append(sig_info)
+
+	return {
+		"node": str(node.name),
+		"type": node.get_class(),
+		"signals": signals,
+		"count": signals.size(),
+	}
+
+
+## Connect a signal from one node to a method on another node.
+static func connect_signal(source_path: String, signal_name: String, target_path: String, method_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var source: Node = root if source_path == "." or source_path == "" else root.get_node_or_null(source_path)
+	if source == null:
+		return {"error": "Source node not found: %s" % source_path}
+
+	var target: Node = root if target_path == "." or target_path == "" else root.get_node_or_null(target_path)
+	if target == null:
+		return {"error": "Target node not found: %s" % target_path}
+
+	if not source.has_signal(signal_name):
+		return {"error": "Signal '%s' does not exist on node '%s' (%s)" % [signal_name, source.name, source.get_class()]}
+
+	if source.is_connected(signal_name, Callable(target, method_name)):
+		return {"error": "Signal '%s' is already connected to '%s.%s'" % [signal_name, target_path, method_name]}
+
+	var err: Error = source.connect(signal_name, Callable(target, method_name))
+	if err != OK:
+		return {"error": "Failed to connect signal: %s" % error_string(err)}
+
+	return {"ok": true}
+
+
+## Disconnect a signal between two nodes.
+static func disconnect_signal(source_path: String, signal_name: String, target_path: String, method_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var source: Node = root if source_path == "." or source_path == "" else root.get_node_or_null(source_path)
+	if source == null:
+		return {"error": "Source node not found: %s" % source_path}
+
+	var target: Node = root if target_path == "." or target_path == "" else root.get_node_or_null(target_path)
+	if target == null:
+		return {"error": "Target node not found: %s" % target_path}
+
+	if not source.has_signal(signal_name):
+		return {"error": "Signal '%s' does not exist on node '%s' (%s)" % [signal_name, source.name, source.get_class()]}
+
+	var callable: Callable = Callable(target, method_name)
+	if not source.is_connected(signal_name, callable):
+		return {"error": "Signal '%s' is not connected to '%s.%s'" % [signal_name, target_path, method_name]}
+
+	source.disconnect(signal_name, callable)
+	return {"ok": true}
+
+
+## Add a node to a group.
+static func add_to_group(node_path: String, group_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if node.is_in_group(group_name):
+		return {"error": "Node '%s' is already in group '%s'" % [node.name, group_name]}
+
+	node.add_to_group(group_name, true)
+	return {"ok": true, "groups": _get_node_groups(node)}
+
+
+## Remove a node from a group.
+static func remove_from_group(node_path: String, group_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if not node.is_in_group(group_name):
+		return {"error": "Node '%s' is not in group '%s'" % [node.name, group_name]}
+
+	node.remove_from_group(group_name)
+	return {"ok": true, "groups": _get_node_groups(node)}
+
+
+## Get all persistent groups for a node (excluding internal groups).
+static func _get_node_groups(node: Node) -> Array:
+	var groups: Array = []
+	for g: StringName in node.get_groups():
+		var gs: String = str(g)
+		if not gs.begins_with("_"):
+			groups.append(gs)
+	return groups
+
+
 ## Set a property on a node, handling type deserialization.
 static func _set_node_property(node: Node, prop_name: String, value: Variant) -> void:
 	# Special handling for texture loading
