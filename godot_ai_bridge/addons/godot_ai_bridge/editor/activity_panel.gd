@@ -92,7 +92,6 @@ func _show_setup_instructions() -> void:
 
 	text += "[color=#4ec9b0]Step 1:[/color] [b]Install Python dependencies[/b]\n"
 	text += "  Open a terminal and run:\n"
-	text += "  [code]cd %s[/code]\n" % abs_path.get_base_dir()
 	text += "  [code]pip install fastmcp httpx[/code]\n"
 	text += "  (Or use [code]uv pip install fastmcp httpx[/code] if you have uv)\n\n"
 
@@ -185,31 +184,10 @@ func _generate_mcp_config() -> String:
 
 ## Compute the absolute path to the MCP server.py file.
 func _compute_mcp_server_path() -> void:
-	# The MCP server lives alongside the addon, typically at:
-	# <project>/godot_ai_bridge/mcp_server/server.py  (if cloned from repo)
-	# Or the user might place it elsewhere. We look relative to the addon.
-	var addon_path: String = "res://addons/godot_ai_bridge/"
-	var abs_addon: String = ProjectSettings.globalize_path(addon_path)
-
-	# Try common locations relative to the addon
-	var candidates: Array[String] = [
-		# Same parent as addons/ (repo layout: godot_ai_bridge/addons/... and godot_ai_bridge/mcp_server/...)
-		abs_addon.get_base_dir().get_base_dir().path_join("mcp_server/server.py"),
-		# Sibling to addons/
-		abs_addon.get_base_dir().get_base_dir().get_base_dir().path_join("mcp_server/server.py"),
-		# Inside the addon itself
-		abs_addon.path_join("../../mcp_server/server.py"),
-	]
-
-	for candidate: String in candidates:
-		# Normalize the path
-		var normalized: String = candidate.simplify_path()
-		if FileAccess.file_exists(normalized):
-			_mcp_server_path = normalized
-			return
-
-	# Fallback: use a placeholder the user can edit
-	_mcp_server_path = abs_addon.get_base_dir().get_base_dir().path_join("mcp_server/server.py")
+	# The MCP server is bundled inside the addon at:
+	# res://addons/godot_ai_bridge/mcp_server/server.py
+	var server_res_path: String = "res://addons/godot_ai_bridge/mcp_server/server.py"
+	_mcp_server_path = ProjectSettings.globalize_path(server_res_path)
 
 
 ## Get the color for an HTTP method.

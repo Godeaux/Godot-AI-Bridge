@@ -5,7 +5,7 @@ class_name BridgeHTTPServer
 extends Node
 
 ## Parsed HTTP request data.
-class HTTPRequest:
+class BridgeRequest:
 	var method: String = ""
 	var path: String = ""
 	var query_params: Dictionary = {}
@@ -18,7 +18,7 @@ class HTTPRequest:
 class ClientConnection:
 	var peer: StreamPeerTCP
 	var buffer: PackedByteArray = PackedByteArray()
-	var request: HTTPRequest = null
+	var request: BridgeRequest = null
 	var headers_parsed: bool = false
 	var content_length: int = 0
 	var header_end_index: int = -1
@@ -26,7 +26,7 @@ class ClientConnection:
 
 	func _init(p_peer: StreamPeerTCP) -> void:
 		peer = p_peer
-		request = HTTPRequest.new()
+		request = BridgeRequest.new()
 		created_at = Time.get_ticks_msec() / 1000.0
 
 var _tcp_server: TCPServer = null

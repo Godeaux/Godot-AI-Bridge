@@ -7,12 +7,12 @@ extends RefCounted
 # --- Scene & Node Operations ---
 
 ## GET /scene/tree
-func handle_get_scene_tree(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_get_scene_tree(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return SceneTools.get_scene_tree()
 
 
 ## POST /scene/create
-func handle_create_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_create_scene(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var root_type: String = str(body.get("root_type", "Node"))
 	var save_path: String = str(body.get("save_path", ""))
@@ -24,7 +24,7 @@ func handle_create_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /node/add
-func handle_add_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_add_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var parent_path: String = str(body.get("parent_path", "."))
 	var node_type: String = str(body.get("type", ""))
@@ -40,7 +40,7 @@ func handle_add_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /node/remove
-func handle_remove_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_remove_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 
@@ -51,7 +51,7 @@ func handle_remove_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /node/set_property
-func handle_set_property(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_set_property(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 	var property: String = str(body.get("property", ""))
@@ -64,7 +64,7 @@ func handle_set_property(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /node/get_property
-func handle_get_property(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_get_property(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var path: String = request.query_params.get("path", "")
 	var property: String = request.query_params.get("property", "")
 
@@ -75,12 +75,12 @@ func handle_get_property(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /scene/save
-func handle_save_scene(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_save_scene(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return SceneTools.save_scene()
 
 
 ## POST /scene/open
-func handle_open_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_open_scene(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 
@@ -91,7 +91,7 @@ func handle_open_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /node/duplicate
-func handle_duplicate_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_duplicate_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 	var new_name: String = str(body.get("new_name", ""))
@@ -103,7 +103,7 @@ func handle_duplicate_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /node/reparent
-func handle_reparent_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_reparent_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 	var new_parent: String = str(body.get("new_parent", ""))
@@ -118,7 +118,7 @@ func handle_reparent_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /node/properties
-func handle_list_node_properties(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_list_node_properties(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var path: String = request.query_params.get("path", "")
 	if path == "":
 		return {"error": "Must provide 'path' query param"}
@@ -126,7 +126,7 @@ func handle_list_node_properties(request: BridgeHTTPServer.HTTPRequest) -> Dicti
 
 
 ## POST /node/rename
-func handle_rename_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_rename_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 	var new_name: String = str(body.get("new_name", ""))
@@ -140,7 +140,7 @@ func handle_rename_node(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /node/instance_scene
-func handle_instance_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_instance_scene(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var scene_path: String = str(body.get("scene_path", ""))
 	var parent_path: String = str(body.get("parent_path", "."))
@@ -153,7 +153,7 @@ func handle_instance_scene(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /node/find
-func handle_find_nodes(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_find_nodes(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var name_pattern: String = request.query_params.get("name", "")
 	var type_name: String = request.query_params.get("type", "")
 	var group: String = request.query_params.get("group", "")
@@ -168,7 +168,7 @@ func handle_find_nodes(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 # --- Script Operations ---
 
 ## GET /script/read
-func handle_read_script(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_read_script(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var path: String = request.query_params.get("path", "")
 	if path == "":
 		return {"error": "Must provide 'path' query param"}
@@ -176,7 +176,7 @@ func handle_read_script(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /script/write
-func handle_write_script(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_write_script(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 	var content: String = str(body.get("content", ""))
@@ -190,7 +190,7 @@ func handle_write_script(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /script/create
-func handle_create_script(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_create_script(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var path: String = str(body.get("path", ""))
 	var extends_class: String = str(body.get("extends", "Node"))
@@ -203,24 +203,24 @@ func handle_create_script(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /script/errors
-func handle_get_errors(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_get_errors(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return ScriptTools.get_errors()
 
 
 ## GET /debugger/output
-func handle_debugger_output(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_debugger_output(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return ScriptTools.get_debugger_output()
 
 
 # --- Project Operations ---
 
 ## GET /project/structure
-func handle_project_structure(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_project_structure(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return ProjectTools.get_structure()
 
 
 ## GET /project/search
-func handle_project_search(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_project_search(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var pattern: String = request.query_params.get("pattern", "")
 	var query: String = request.query_params.get("query", "")
 
@@ -231,24 +231,24 @@ func handle_project_search(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## GET /project/input_map
-func handle_input_map(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_input_map(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return ProjectTools.get_input_map()
 
 
 ## GET /project/settings
-func handle_project_settings(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_project_settings(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return ProjectTools.get_project_settings()
 
 
 ## GET /project/autoloads
-func handle_autoloads(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_autoloads(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return ProjectTools.get_autoloads()
 
 
 # --- Run Control ---
 
 ## POST /game/run
-func handle_run_game(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_run_game(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var scene: String = str(body.get("scene", ""))
 
@@ -261,21 +261,22 @@ func handle_run_game(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
 
 
 ## POST /game/stop
-func handle_stop_game(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_stop_game(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	EditorInterface.stop_playing_scene()
 	return {"ok": true, "running": false}
 
 
 ## GET /game/is_running
-func handle_is_running(_request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_is_running(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return {"running": EditorInterface.is_playing_scene()}
 
 
 # --- Editor Screenshot ---
 
 ## GET /screenshot — mode=viewport (just 2D/3D canvas) or mode=full (entire editor window)
-func handle_screenshot(request: BridgeHTTPServer.HTTPRequest) -> Dictionary:
+func handle_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var width: int = int(request.query_params.get("width", str(BridgeConfig.DEFAULT_SCREENSHOT_WIDTH)))
 	var height: int = int(request.query_params.get("height", str(BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT)))
+	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
 	var mode: String = request.query_params.get("mode", "viewport")
-	return EditorScreenshot.capture(width, height, mode)
+	return EditorScreenshot.capture(width, height, mode, quality)

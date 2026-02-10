@@ -33,7 +33,7 @@ Copy `addons/godot_ai_bridge/` into your Godot project's `addons/` folder:
 ```
 your_project/
 ├── addons/
-│   └── godot_ai_bridge/   ← copy this
+│   └── godot_ai_bridge/   ← copy this (includes mcp_server/)
 ├── scenes/
 ├── scripts/
 └── project.godot
@@ -50,33 +50,20 @@ pip install fastmcp httpx
 Or if you use [uv](https://docs.astral.sh/uv/):
 
 ```bash
-cd mcp_server
+cd your_project/addons/godot_ai_bridge/mcp_server
 uv sync
 ```
 
 ### 3. Configure Your AI Client
 
-Add the MCP server to your AI client's configuration. Replace `/path/to` with the actual path.
+Add the MCP server to your AI client's configuration. Replace `/path/to/your_project` with the actual path.
 
-**Using pip:**
 ```json
 {
   "mcpServers": {
     "godot": {
       "command": "python",
-      "args": ["/path/to/godot_ai_bridge/mcp_server/server.py"]
-    }
-  }
-}
-```
-
-**Using uv:**
-```json
-{
-  "mcpServers": {
-    "godot": {
-      "command": "uv",
-      "args": ["run", "/path/to/godot_ai_bridge/mcp_server/server.py"]
+      "args": ["/path/to/your_project/addons/godot_ai_bridge/mcp_server/server.py"]
     }
   }
 }
@@ -119,11 +106,42 @@ Runtime tools become available when you run the game via `godot_run_game`.
 
 Both bind to `127.0.0.1` only — no external network access.
 
+## Testing
+
+Tests use [GdUnit4](https://github.com/godot-gdunit-labs/gdUnit4) (v6.1.1+). Install it before running tests:
+
+```bash
+# From the godot_ai_bridge/ directory:
+./install_gdunit4.sh
+```
+
+Or install manually:
+
+1. Download [GdUnit4 v6.1.1](https://github.com/godot-gdunit-labs/gdUnit4/releases/tag/v6.1.1) (`v6.1.1.zip`)
+2. Extract the `addons/gdUnit4/` folder into `godot_ai_bridge/addons/`
+3. Open the project in Godot and enable the GdUnit4 plugin under **Project > Project Settings > Plugins**
+
+Test files live in `test/` and extend `GdUnitTestSuite`:
+
+```gdscript
+extends GdUnitTestSuite
+
+func test_something() -> void:
+    assert_str("hello").is_equal("hello")
+```
+
+Run from Godot's GdUnit4 inspector panel, or headless:
+
+```bash
+godot --headless --path . -s addons/gdUnit4/bin/GdUnitCmdTool.gd -a test/
+```
+
 ## Requirements
 
 - Godot 4.6
 - Python 3.10+
 - [FastMCP](https://pypi.org/project/fastmcp/) 2.x and [httpx](https://pypi.org/project/httpx/)
+- [GdUnit4](https://github.com/godot-gdunit-labs/gdUnit4) 6.1.1+ (for tests only)
 
 ## License
 

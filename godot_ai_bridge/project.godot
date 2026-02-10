@@ -1,0 +1,12 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; but it can also be edited by hand.
+
+[application]
+
+config/name="Godot AI Bridge"
+config/features=PackedStringArray("4.6")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_ai_bridge/plugin.cfg")
