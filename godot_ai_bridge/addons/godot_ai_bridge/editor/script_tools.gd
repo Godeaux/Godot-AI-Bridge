@@ -73,11 +73,23 @@ static func get_errors() -> Dictionary:
 	for script: Script in open_scripts:
 		if script == null:
 			continue
-		# Check if the script has compilation errors by trying to reload it
-		if not script.can_instantiate():
+		var path: String = script.resource_path
+		if path == "":
+			continue
+		# Reload from disk to avoid false positives from stale in-memory resources
+		# (e.g., after godot_write_script modifies the file externally).
+		var fresh: Script = load(path) as Script
+		if fresh != null:
+			fresh.reload()
+			if not fresh.can_instantiate():
+				errors.append({
+					"path": path,
+					"message": "Script has compilation errors",
+				})
+		else:
 			errors.append({
-				"path": script.resource_path,
-				"message": "Script has compilation errors",
+				"path": path,
+				"message": "Script could not be loaded",
 			})
 
 	return {"errors": errors}

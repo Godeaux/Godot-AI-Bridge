@@ -3,12 +3,19 @@
 class_name EditorRoutes
 extends RefCounted
 
+# Preload tool scripts — bare class_name references don't resolve reliably
+# in editor plugins at runtime.
+const _SceneTools := preload("res://addons/godot_ai_bridge/editor/scene_tools.gd")
+const _ScriptTools := preload("res://addons/godot_ai_bridge/editor/script_tools.gd")
+const _ProjectTools := preload("res://addons/godot_ai_bridge/editor/project_tools.gd")
+const _EditorScreenshot := preload("res://addons/godot_ai_bridge/editor/editor_screenshot.gd")
+
 
 # --- Scene & Node Operations ---
 
 ## GET /scene/tree
 func handle_get_scene_tree(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return SceneTools.get_scene_tree()
+	return _SceneTools.get_scene_tree()
 
 
 ## POST /scene/create
@@ -20,7 +27,7 @@ func handle_create_scene(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if save_path == "":
 		return {"error": "Must provide 'save_path'"}
 
-	return SceneTools.create_scene(root_type, save_path)
+	return _SceneTools.create_scene(root_type, save_path)
 
 
 ## POST /node/add
@@ -36,7 +43,7 @@ func handle_add_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if node_name == "":
 		return {"error": "Must provide 'name'"}
 
-	return SceneTools.add_node(parent_path, node_type, node_name, properties)
+	return _SceneTools.add_node(parent_path, node_type, node_name, properties)
 
 
 ## POST /node/remove
@@ -47,7 +54,7 @@ func handle_remove_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if path == "":
 		return {"error": "Must provide 'path'"}
 
-	return SceneTools.remove_node(path)
+	return _SceneTools.remove_node(path)
 
 
 ## POST /node/set_property
@@ -60,7 +67,7 @@ func handle_set_property(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if path == "" or property == "":
 		return {"error": "Must provide 'path' and 'property'"}
 
-	return SceneTools.set_property(path, property, value)
+	return _SceneTools.set_property(path, property, value)
 
 
 ## GET /node/get_property
@@ -71,12 +78,12 @@ func handle_get_property(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if path == "" or property == "":
 		return {"error": "Must provide 'path' and 'property' query params"}
 
-	return SceneTools.get_property(path, property)
+	return _SceneTools.get_property(path, property)
 
 
 ## POST /scene/save
 func handle_save_scene(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return SceneTools.save_scene()
+	return _SceneTools.save_scene()
 
 
 ## POST /scene/open
@@ -87,7 +94,7 @@ func handle_open_scene(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if path == "":
 		return {"error": "Must provide 'path'"}
 
-	return SceneTools.open_scene(path)
+	return _SceneTools.open_scene(path)
 
 
 ## POST /node/duplicate
@@ -99,7 +106,7 @@ func handle_duplicate_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionar
 	if path == "":
 		return {"error": "Must provide 'path'"}
 
-	return SceneTools.duplicate_node(path, new_name)
+	return _SceneTools.duplicate_node(path, new_name)
 
 
 ## POST /node/reparent
@@ -114,7 +121,7 @@ func handle_reparent_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary
 	if new_parent == "":
 		return {"error": "Must provide 'new_parent'"}
 
-	return SceneTools.reparent_node(path, new_parent, keep_transform)
+	return _SceneTools.reparent_node(path, new_parent, keep_transform)
 
 
 ## GET /node/properties
@@ -122,7 +129,7 @@ func handle_list_node_properties(request: BridgeHTTPServer.BridgeRequest) -> Dic
 	var path: String = request.query_params.get("path", "")
 	if path == "":
 		return {"error": "Must provide 'path' query param"}
-	return SceneTools.list_node_properties(path)
+	return _SceneTools.list_node_properties(path)
 
 
 ## POST /node/rename
@@ -136,7 +143,7 @@ func handle_rename_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if new_name == "":
 		return {"error": "Must provide 'new_name'"}
 
-	return SceneTools.rename_node(path, new_name)
+	return _SceneTools.rename_node(path, new_name)
 
 
 ## POST /node/instance_scene
@@ -149,7 +156,7 @@ func handle_instance_scene(request: BridgeHTTPServer.BridgeRequest) -> Dictionar
 	if scene_path == "":
 		return {"error": "Must provide 'scene_path'"}
 
-	return SceneTools.instance_scene(scene_path, parent_path, node_name)
+	return _SceneTools.instance_scene(scene_path, parent_path, node_name)
 
 
 ## GET /node/find
@@ -162,7 +169,7 @@ func handle_find_nodes(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if name_pattern == "" and type_name == "" and group == "":
 		return {"error": "Must provide at least one of: 'name', 'type', 'group'"}
 
-	return SceneTools.find_nodes(name_pattern, type_name, group, in_path)
+	return _SceneTools.find_nodes(name_pattern, type_name, group, in_path)
 
 
 # --- Script Operations ---
@@ -172,7 +179,7 @@ func handle_read_script(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var path: String = request.query_params.get("path", "")
 	if path == "":
 		return {"error": "Must provide 'path' query param"}
-	return ScriptTools.read_script(path)
+	return _ScriptTools.read_script(path)
 
 
 ## POST /script/write
@@ -186,7 +193,7 @@ func handle_write_script(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if content == "":
 		return {"error": "Must provide 'content'"}
 
-	return ScriptTools.write_script(path, content)
+	return _ScriptTools.write_script(path, content)
 
 
 ## POST /script/create
@@ -199,24 +206,24 @@ func handle_create_script(request: BridgeHTTPServer.BridgeRequest) -> Dictionary
 	if path == "":
 		return {"error": "Must provide 'path'"}
 
-	return ScriptTools.create_script(path, extends_class, template)
+	return _ScriptTools.create_script(path, extends_class, template)
 
 
 ## GET /script/errors
 func handle_get_errors(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return ScriptTools.get_errors()
+	return _ScriptTools.get_errors()
 
 
 ## GET /debugger/output
 func handle_debugger_output(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return ScriptTools.get_debugger_output()
+	return _ScriptTools.get_debugger_output()
 
 
 # --- Project Operations ---
 
 ## GET /project/structure
 func handle_project_structure(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return ProjectTools.get_structure()
+	return _ProjectTools.get_structure()
 
 
 ## GET /project/search
@@ -227,22 +234,22 @@ func handle_project_search(request: BridgeHTTPServer.BridgeRequest) -> Dictionar
 	if pattern == "" and query == "":
 		return {"error": "Must provide 'pattern' or 'query' param"}
 
-	return ProjectTools.search_files(pattern, query)
+	return _ProjectTools.search_files(pattern, query)
 
 
 ## GET /project/input_map
 func handle_input_map(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return ProjectTools.get_input_map()
+	return _ProjectTools.get_input_map()
 
 
 ## GET /project/settings
 func handle_project_settings(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return ProjectTools.get_project_settings()
+	return _ProjectTools.get_project_settings()
 
 
 ## GET /project/autoloads
 func handle_autoloads(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
-	return ProjectTools.get_autoloads()
+	return _ProjectTools.get_autoloads()
 
 
 # --- Run Control ---
@@ -252,10 +259,14 @@ func handle_run_game(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var scene: String = str(body.get("scene", ""))
 
+	# Defer the play call to the next frame so the HTTP response is sent first.
+	# Calling play_*_scene() synchronously inside an HTTP handler blocks the main
+	# thread during game compilation/launch, preventing the TCP server from
+	# servicing connections and causing editor crashes (especially on Windows).
 	if scene != "":
-		EditorInterface.play_custom_scene(scene)
+		EditorInterface.play_custom_scene.call_deferred(scene)
 	else:
-		EditorInterface.play_main_scene()
+		EditorInterface.play_main_scene.call_deferred()
 
 	return {"ok": true, "running": true}
 
@@ -279,4 +290,4 @@ func handle_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var height: int = int(request.query_params.get("height", str(BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT)))
 	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
 	var mode: String = request.query_params.get("mode", "viewport")
-	return EditorScreenshot.capture(width, height, mode, quality)
+	return _EditorScreenshot.capture(width, height, mode, quality)

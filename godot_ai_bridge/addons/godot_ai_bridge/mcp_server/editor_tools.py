@@ -7,17 +7,19 @@ project structure, run control, and editor screenshots.
 from __future__ import annotations
 
 import asyncio
-import base64
 from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
 from client import editor, runtime
 
 
-def _b64_image(b64_data: str) -> Image:
-    """Decode a base64 JPEG string from Godot into a FastMCP Image."""
-    return Image(data=base64.b64decode(b64_data), format="jpeg")
+def _b64_image(b64_data: str) -> dict[str, str]:
+    """Return a base64 JPEG as an MCP image content block dict.
+
+    FastMCP 2.14.5 can't serialize Image objects inside list[Any] returns,
+    so we return the MCP-protocol image content block directly.
+    """
+    return {"type": "image", "data": b64_data, "mimeType": "image/jpeg"}
 
 
 def register_editor_tools(mcp: FastMCP) -> None:
@@ -348,6 +350,16 @@ def register_editor_tools(mcp: FastMCP) -> None:
 
     # --- Project Tools ---
 
+    def _count_files_in_tree(entries: list) -> int:
+        """Recursively count files in a project structure tree."""
+        count = 0
+        for entry in entries:
+            if entry.get("type") == "file":
+                count += 1
+            elif entry.get("type") == "directory":
+                count += _count_files_in_tree(entry.get("children", []))
+        return count
+
     @mcp.tool
     async def godot_project_structure() -> dict[str, Any]:
         """Get the project directory tree (res://).
@@ -357,7 +369,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         """
         result = await editor.get("/project/structure")
         if "error" not in result:
-            file_count = len(result.get("files", []))
+            file_count = _count_files_in_tree(result.get("tree", []))
             result["_description"] = f"📁 Project structure — {file_count} files"
         return result
 
@@ -430,8 +442,12 @@ def register_editor_tools(mcp: FastMCP) -> None:
 
         result = await editor.post("/game/run", body)
 
+        # Give the editor a moment to process the deferred play call and
+        # compile/launch the game before we start polling the runtime bridge.
+        await asyncio.sleep(1.0)
+
         # Poll until runtime bridge is available
-        for i in range(50):  # 5 second timeout
+        for i in range(40):  # ~4 more seconds of polling
             await asyncio.sleep(0.1)
             if await runtime.is_available():
                 info = await runtime.get("/info")
