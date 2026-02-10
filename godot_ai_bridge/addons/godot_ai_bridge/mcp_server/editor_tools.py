@@ -7,6 +7,7 @@ project structure, run control, and editor screenshots.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 from fastmcp import FastMCP
@@ -33,6 +34,90 @@ def _is_error_line(line: str) -> bool:
         return False
     lowered = stripped.lower()
     return any(m in lowered for m in _ERROR_MARKERS)
+
+
+# ---------------------------------------------------------------------------
+# Strict startup-gating: fatal error patterns and structured error parsing
+# ---------------------------------------------------------------------------
+
+# Patterns that are treated as fatal startup errors when strict=True.
+# If any of these appear in console/debugger output after launch, the game
+# is considered to have a startup error that must be fixed before proceeding.
+_FATAL_PATTERNS: list[str] = [
+    "node not found",
+    "cannot call method",
+    "invalid access",
+    "invalid call",
+    "script error",
+    "parse error",
+]
+
+# Regex to extract file path and line number from Godot error output.
+# Matches patterns like:
+#   res://scripts/player.gd:11
+#   At: res://scripts/player.gd:42
+#   (res://scenes/main.gd:7)
+_FILE_LINE_RE = re.compile(r"(res://[^\s:,)]+):(\d+)")
+
+# Regex for "SCRIPT ERROR:" or "Parse Error:" prefixed lines.
+_SCRIPT_ERROR_RE = re.compile(
+    r"(?:SCRIPT ERROR|Parse Error|ERROR)\s*:\s*(.+)", re.IGNORECASE
+)
+
+
+def _is_fatal_error(line: str) -> bool:
+    """Return True if *line* matches any fatal startup error pattern."""
+    lowered = line.strip().lower()
+    if not lowered:
+        return False
+    return any(p in lowered for p in _FATAL_PATTERNS)
+
+
+def _parse_error_line(line: str) -> dict[str, Any]:
+    """Parse a single Godot error line into a structured dict.
+
+    Returns {"message": str, "file": str|None, "line": int|None}.
+    """
+    stripped = line.strip()
+    result: dict[str, Any] = {"message": stripped, "file": None, "line": None}
+
+    # Try to extract file:line
+    m = _FILE_LINE_RE.search(stripped)
+    if m:
+        result["file"] = m.group(1)
+        result["line"] = int(m.group(2))
+
+    # Try to clean up the message (extract the core error after "SCRIPT ERROR:" etc.)
+    m2 = _SCRIPT_ERROR_RE.search(stripped)
+    if m2:
+        result["message"] = m2.group(1).strip()
+
+    return result
+
+
+def _collect_startup_errors(output: str) -> list[dict[str, Any]]:
+    """Scan console/debugger output for fatal startup errors.
+
+    Returns a list of structured error dicts.  Only lines matching
+    ``_FATAL_PATTERNS`` are included.
+    """
+    errors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in output.split("\n"):
+        if _is_fatal_error(line):
+            key = line.strip()
+            if key not in seen:
+                seen.add(key)
+                errors.append(_parse_error_line(line))
+    return errors
+
+
+def _truncate_log_tail(output: str, max_lines: int = 60) -> str:
+    """Return the last *max_lines* lines of *output*."""
+    lines = output.strip().split("\n")
+    if len(lines) > max_lines:
+        return "\n".join(lines[-max_lines:])
+    return output.strip()
 
 
 def register_editor_tools(mcp: FastMCP) -> None:
@@ -439,15 +524,32 @@ def register_editor_tools(mcp: FastMCP) -> None:
     # --- Run Control ---
 
     @mcp.tool
-    async def godot_run_game(scene: str = "") -> dict[str, Any]:
+    async def godot_run_game(scene: str = "", strict: bool = False) -> dict[str, Any]:
         """Start running the game from the editor.
 
         After starting, runtime tools become available. This tool will wait for
         the runtime bridge to become reachable before returning.
 
+        When **strict=True** (startup gating mode), any fatal runtime error
+        detected during startup causes the tool to return ``ok=false`` with
+        machine-readable ``startup_errors``.  Fatal patterns include:
+        Node not found, Cannot call method, Invalid access/call, SCRIPT ERROR,
+        and Parse Error.
+
+        If you receive ``ok=false``, you MUST enter repair mode:
+        1. Stop normal actions (no snapshot/click).
+        2. Call ``godot_get_errors()`` and ``godot_get_debugger_output()`` for
+           full diagnostics.
+        3. Patch the files referenced by ``startup_errors`` / debug output.
+        4. Save the scene (``godot_save_scene()``), then re-run
+           ``godot_run_game(strict=True)``.
+        5. Repeat up to 5 attempts. Only proceed when ``ok=true``.
+
         Args:
             scene: Optional scene path to run (e.g., 'res://scenes/level_1.tscn').
                    If empty, runs the project's main scene.
+            strict: If True, treat any fatal error pattern as a startup failure
+                    that must be repaired before the agent may proceed.
         """
         body: dict[str, Any] = {}
         if scene:
@@ -465,47 +567,102 @@ def register_editor_tools(mcp: FastMCP) -> None:
             if await runtime.is_available():
                 info = await runtime.get("/info")
                 scene_name = info.get("current_scene", scene or "main scene")
+
+                # Gather console output for error detection
+                console_output = ""
+                try:
+                    console = await runtime.get("/console")
+                    console_output = console.get("output", "")
+                except Exception:
+                    pass  # Console fetch is best-effort
+
+                # Gather debugger output as well (captures errors the console may miss)
+                debugger_output = ""
+                try:
+                    debugger = await editor.get("/debugger/output")
+                    debugger_output = debugger.get("output", "")
+                except Exception:
+                    pass
+
+                combined_output = (console_output + "\n" + debugger_output).strip()
+
+                # --- Strict mode: check for fatal startup errors ---
+                if strict:
+                    startup_errors = _collect_startup_errors(combined_output)
+                    if startup_errors:
+                        return {
+                            "ok": False,
+                            "running": True,
+                            "error_type": "startup_runtime_error",
+                            "startup_errors": startup_errors,
+                            "log_tail": _truncate_log_tail(combined_output),
+                            "_description": (
+                                f"❌ Game started but has {len(startup_errors)} fatal "
+                                f"startup error(s) — repair required"
+                            ),
+                        }
+
+                # --- Build success response ---
                 response: dict[str, Any] = {
                     "ok": True,
                     "running": True,
                     "_description": f"▶️ Game started — '{scene_name}'",
                     "game_info": info,
                 }
-                # Fetch console output to surface any startup errors
-                # (e.g. "Node not found", push_error messages).
-                try:
-                    console = await runtime.get("/console")
-                    console_output = console.get("output", "")
-                    if console_output:
-                        error_lines = [
-                            line.strip() for line in console_output.split("\n")
-                            if _is_error_line(line)
-                        ]
-                        if error_lines:
-                            response["runtime_errors"] = error_lines
-                except Exception:
-                    pass  # Console fetch is best-effort
+                # Surface any non-fatal error lines in non-strict mode
+                if console_output:
+                    error_lines = [
+                        line.strip() for line in console_output.split("\n")
+                        if _is_error_line(line)
+                    ]
+                    if error_lines:
+                        response["runtime_errors"] = error_lines
                 return response
 
         # Runtime bridge never connected — the game likely crashed on startup.
-        response = {
-            "ok": False,
-            "running": False,
-            "_description": "❌ Game failed to start — runtime bridge never connected",
-        }
-        # Try to get debugger/editor output for crash details.
+        # Gather whatever diagnostics we can from the editor side.
+        debugger_output = ""
         try:
             debugger = await editor.get("/debugger/output")
             debugger_output = debugger.get("output", "")
-            if debugger_output:
+        except Exception:
+            pass  # Editor may also be unreachable
+
+        if strict:
+            startup_errors = _collect_startup_errors(debugger_output)
+            # If no structured errors were found, synthesize one from any
+            # available error lines so the caller always gets something useful.
+            if not startup_errors:
                 error_lines = [
                     line.strip() for line in debugger_output.split("\n")
                     if _is_error_line(line)
                 ]
-                if error_lines:
-                    response["debugger_errors"] = error_lines
-        except Exception:
-            pass  # Editor may also be unreachable
+                startup_errors = [_parse_error_line(l) for l in error_lines]
+            return {
+                "ok": False,
+                "running": False,
+                "error_type": "startup_runtime_error",
+                "startup_errors": startup_errors,
+                "log_tail": _truncate_log_tail(debugger_output) if debugger_output else "",
+                "_description": (
+                    "❌ Game failed to start — runtime bridge never connected. "
+                    f"{len(startup_errors)} error(s) found."
+                ),
+            }
+
+        # Non-strict fallback (original behaviour)
+        response: dict[str, Any] = {
+            "ok": False,
+            "running": False,
+            "_description": "❌ Game failed to start — runtime bridge never connected",
+        }
+        if debugger_output:
+            error_lines = [
+                line.strip() for line in debugger_output.split("\n")
+                if _is_error_line(line)
+            ]
+            if error_lines:
+                response["debugger_errors"] = error_lines
         return response
 
     @mcp.tool
