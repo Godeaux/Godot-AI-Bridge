@@ -604,7 +604,8 @@ def register_editor_tools(mcp: FastMCP) -> None:
                             "log_tail": _truncate_log_tail(combined_output),
                             "_description": (
                                 f"❌ Game started but has {len(startup_errors)} fatal "
-                                f"startup error(s) — repair required"
+                                f"startup error(s) — read the errors below, fix the "
+                                f"code, stop, save, and relaunch"
                             ),
                         }
 
@@ -651,8 +652,8 @@ def register_editor_tools(mcp: FastMCP) -> None:
                 "startup_errors": startup_errors,
                 "log_tail": _truncate_log_tail(debugger_output) if debugger_output else "",
                 "_description": (
-                    "❌ Game failed to start — runtime bridge never connected. "
-                    f"{len(startup_errors)} error(s) found."
+                    f"❌ Game failed to start — {len(startup_errors)} error(s) found. "
+                    "Read the errors, fix the code, save, and relaunch."
                 ),
             }
 
@@ -660,7 +661,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         response: dict[str, Any] = {
             "ok": False,
             "running": False,
-            "_description": "❌ Game failed to start — runtime bridge never connected",
+            "_description": "❌ Game failed to start — call godot_get_debugger_output() to see errors, fix, and relaunch",
         }
         if debugger_output:
             error_lines = [

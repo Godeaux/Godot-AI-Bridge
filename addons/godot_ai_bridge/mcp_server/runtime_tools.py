@@ -62,11 +62,20 @@ async def _get_crash_diagnostics() -> str:
     except Exception:
         pass  # Editor may be unreachable too — best effort
 
+    repair_steps = (
+        "\n\nYou MUST attempt to fix this. Follow these steps:\n"
+        "  1. Call godot_get_debugger_output() for full error context.\n"
+        "  2. Read the broken script(s) with godot_read_script().\n"
+        "  3. Fix the code with godot_write_script().\n"
+        "  4. Call godot_stop_game(), then godot_save_scene().\n"
+        "  5. Relaunch with godot_run_game(strict=true).\n"
+        "Do NOT stop here — diagnose and fix the error."
+    )
+
     if not error_lines:
         return (
-            "Game crashed or was stopped — no error details found in the log. "
-            "Use godot_get_debugger_output() for the full log, or "
-            "godot_run_game(strict=true) to relaunch with error gating."
+            "Game crashed or was stopped — no error details found in the log."
+            + repair_steps
         )
 
     # Deduplicate while preserving order, keep last 10
@@ -81,8 +90,7 @@ async def _get_crash_diagnostics() -> str:
     return (
         "Game crashed or was stopped unexpectedly. Errors found in log:\n\n"
         + "\n".join(f"  {line}" for line in unique)
-        + "\n\nUse godot_get_debugger_output() for the full log. "
-        "Fix the errors, then godot_run_game(strict=true) to relaunch."
+        + repair_steps
     )
 
 
