@@ -277,5 +277,6 @@ func handle_is_running(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 func handle_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var width: int = int(request.query_params.get("width", str(BridgeConfig.DEFAULT_SCREENSHOT_WIDTH)))
 	var height: int = int(request.query_params.get("height", str(BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT)))
+	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
 	var mode: String = request.query_params.get("mode", "viewport")
-	return EditorScreenshot.capture(width, height, mode)
+	return EditorScreenshot.capture(width, height, mode, quality)

@@ -16,8 +16,8 @@ from client import runtime
 
 
 def _b64_image(b64_data: str) -> Image:
-    """Decode a base64 PNG string from Godot into a FastMCP Image."""
-    return Image(data=base64.b64decode(b64_data), format="png")
+    """Decode a base64 JPEG string from Godot into a FastMCP Image."""
+    return Image(data=base64.b64decode(b64_data), format="jpeg")
 
 
 GAME_NOT_RUNNING_MSG = "Game is not running. Use godot_run_game() to start it first."
@@ -61,13 +61,14 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     async def game_snapshot(
         root: str = "",
         depth: int = 12,
-        include_screenshot: bool = True,
+        include_screenshot: bool = False,
+        quality: float = 0.75,
     ) -> list[Any]:
         """Get a structured scene tree snapshot from the running game with stable refs.
 
         This is your PRIMARY way to understand game state. Always call this before and
-        after interactions. Returns both structured data (node tree with refs, positions,
-        properties) and a screenshot by default.
+        after interactions. Returns structured data (node tree with refs, positions,
+        properties). Set include_screenshot=True if you also need a visual.
 
         Each node gets a short ref like "n1", "n5" — use these with game_click_node,
         game_state, etc. Refs are only valid until the next snapshot call.
@@ -75,7 +76,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         Args:
             root: Optional node path to start from instead of scene root (e.g., 'HUD').
             depth: Max tree depth to walk (default 12).
-            include_screenshot: Whether to include a screenshot (default True).
+            include_screenshot: Whether to include a screenshot (default False).
+            quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
         """
         err = await _check_runtime()
         if err:
@@ -84,6 +86,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         params: dict[str, str] = {
             "depth": str(depth),
             "include_screenshot": "true" if include_screenshot else "false",
+            "quality": str(quality),
         }
         if root:
             params["root"] = root
@@ -110,22 +113,22 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     # --- Screenshots ---
 
     @mcp.tool
-    async def game_screenshot(width: int = 960, height: int = 540) -> list[Any]:
+    async def game_screenshot(width: int = 640, height: int = 360, quality: float = 0.75) -> list[Any]:
         """Capture the running game viewport as a screenshot.
 
-        Every snapshot already includes a screenshot by default, so only call this
-        separately when you need a different resolution or just the image without
-        the full structured data.
+        Use game_snapshot for structured data. Call this when you only need the image,
+        or need a custom resolution.
 
         Args:
-            width: Screenshot width in pixels (default 960).
-            height: Screenshot height in pixels (default 540).
+            width: Screenshot width in pixels (default 640).
+            height: Screenshot height in pixels (default 360).
+            quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
         """
         err = await _check_runtime()
         if err:
             return [err]
 
-        data = await runtime.get("/screenshot", {"width": str(width), "height": str(height)})
+        data = await runtime.get("/screenshot", {"width": str(width), "height": str(height), "quality": str(quality)})
         if "error" in data:
             return [str(data["error"])]
 
@@ -285,7 +288,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     async def game_input_sequence(
         steps: list[dict[str, Any]],
         snapshot_after: bool = True,
-        screenshot_after: bool = True,
+        screenshot_after: bool = False,
     ) -> list[Any]:
         """Execute a sequence of input steps with proper timing.
 
@@ -305,7 +308,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             steps: List of input step dicts to execute in order. Build this from
                    what you observe in the game, not from a static script.
             snapshot_after: Take a snapshot after the sequence (default True).
-            screenshot_after: Include screenshot in the post-sequence snapshot (default True).
+            screenshot_after: Include screenshot in the post-sequence snapshot (default False).
         """
         err = await _check_runtime()
         if err:
@@ -406,9 +409,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     async def game_wait(
         seconds: float = 1.0,
         snapshot: bool = True,
-        screenshot: bool = True,
+        screenshot: bool = False,
     ) -> list[Any]:
-        """Wait N seconds in the running game, then return a snapshot + screenshot.
+        """Wait N seconds in the running game, then return a snapshot.
 
         Essential for letting actions play out before checking results. Use after
         input injection, animation triggers, or any action that takes time to complete.
@@ -416,7 +419,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         Args:
             seconds: How long to wait (default 1.0).
             snapshot: Whether to take a snapshot after waiting (default True).
-            screenshot: Whether to include a screenshot (default True).
+            screenshot: Whether to include a screenshot (default False).
         """
         err = await _check_runtime()
         if err:
@@ -450,9 +453,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         timeout: float = 10.0,
         poll_interval: float = 0.1,
         snapshot: bool = True,
-        screenshot: bool = True,
+        screenshot: bool = False,
     ) -> list[Any]:
-        """Wait until a condition is met in the running game, then return snapshot + screenshot.
+        """Wait until a condition is met in the running game, then return snapshot.
 
         Conditions:
         - 'node_exists': Wait until a node at the given path exists in the tree.
@@ -471,7 +474,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             timeout: Max seconds to wait before giving up (default 10).
             poll_interval: How often to check the condition (default 0.1s).
             snapshot: Take snapshot after condition met (default True).
-            screenshot: Include screenshot (default True).
+            screenshot: Include screenshot (default False).
         """
         err = await _check_runtime()
         if err:

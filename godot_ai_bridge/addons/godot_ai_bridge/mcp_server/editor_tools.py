@@ -15,8 +15,8 @@ from client import editor, runtime
 
 
 def _b64_image(b64_data: str) -> Image:
-    """Decode a base64 PNG string from Godot into a FastMCP Image."""
-    return Image(data=base64.b64decode(b64_data), format="png")
+    """Decode a base64 JPEG string from Godot into a FastMCP Image."""
+    return Image(data=base64.b64decode(b64_data), format="jpeg")
 
 
 def register_editor_tools(mcp: FastMCP) -> None:
@@ -473,8 +473,9 @@ def register_editor_tools(mcp: FastMCP) -> None:
     @mcp.tool
     async def godot_editor_screenshot(
         mode: str = "viewport",
-        width: int = 960,
-        height: int = 540,
+        width: int = 640,
+        height: int = 360,
+        quality: float = 0.75,
     ) -> list[Any]:
         """Capture a screenshot of the Godot editor.
 
@@ -487,12 +488,14 @@ def register_editor_tools(mcp: FastMCP) -> None:
 
         Args:
             mode: "viewport" for the 2D/3D canvas only, "full" for the entire editor window.
-            width: Screenshot width in pixels (default 960).
-            height: Screenshot height in pixels (default 540).
+            width: Screenshot width in pixels (default 640).
+            height: Screenshot height in pixels (default 360).
+            quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
         """
         data = await editor.get("/screenshot", {
             "width": str(width),
             "height": str(height),
+            "quality": str(quality),
             "mode": mode,
         })
         if "error" in data:

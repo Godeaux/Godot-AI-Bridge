@@ -3,8 +3,8 @@ class_name RuntimeScreenshot
 extends RefCounted
 
 
-## Capture the running game viewport and return as base64 PNG.
-static func capture(viewport: Viewport, width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: int = BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT) -> Dictionary:
+## Capture the running game viewport and return as base64 JPEG.
+static func capture(viewport: Viewport, width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: int = BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality: float = BridgeConfig.DEFAULT_SCREENSHOT_QUALITY) -> Dictionary:
 	var image: Image = viewport.get_texture().get_image()
 	if image == null:
 		return {"error": "Failed to capture viewport image"}
@@ -12,12 +12,11 @@ static func capture(viewport: Viewport, width: int = BridgeConfig.DEFAULT_SCREEN
 	if width > 0 and height > 0:
 		image.resize(width, height, Image.INTERPOLATE_LANCZOS)
 
-	var buffer: PackedByteArray = image.save_png_to_buffer()
-	var base64: String = Marshalls.raw_to_base64(buffer)
+	var base64: String = _encode_jpeg_with_budget(image, quality)
 
 	return {
 		"image": base64,
-		"mime": "image/png",
+		"mime": "image/jpeg",
 		"size": [image.get_width(), image.get_height()],
 		"context": "runtime",
 		"frame": Engine.get_frames_drawn(),
@@ -26,7 +25,7 @@ static func capture(viewport: Viewport, width: int = BridgeConfig.DEFAULT_SCREEN
 
 
 ## Capture a region of the viewport around a specific node.
-static func capture_node(node: Node, viewport: Viewport, width: int = 0, height: int = 0) -> Dictionary:
+static func capture_node(node: Node, viewport: Viewport, width: int = 0, height: int = 0, quality: float = BridgeConfig.DEFAULT_SCREENSHOT_QUALITY) -> Dictionary:
 	var image: Image = viewport.get_texture().get_image()
 	if image == null:
 		return {"error": "Failed to capture viewport image"}
@@ -50,12 +49,11 @@ static func capture_node(node: Node, viewport: Viewport, width: int = 0, height:
 	if width > 0 and height > 0:
 		cropped.resize(width, height, Image.INTERPOLATE_LANCZOS)
 
-	var buffer: PackedByteArray = cropped.save_png_to_buffer()
-	var base64: String = Marshalls.raw_to_base64(buffer)
+	var base64: String = _encode_jpeg_with_budget(cropped, quality)
 
 	return {
 		"image": base64,
-		"mime": "image/png",
+		"mime": "image/jpeg",
 		"size": [cropped.get_width(), cropped.get_height()],
 		"context": "runtime_node",
 		"node_rect": BridgeSerialization.serialize(Rect2(crop_rect)),
@@ -64,17 +62,30 @@ static func capture_node(node: Node, viewport: Viewport, width: int = 0, height:
 	}
 
 
+## Encode an image as JPEG base64, reducing quality if the result exceeds the size budget.
+static func _encode_jpeg_with_budget(image: Image, quality: float) -> String:
+	var buffer: PackedByteArray = image.save_jpg_to_buffer(quality)
+	var base64: String = Marshalls.raw_to_base64(buffer)
+
+	# If over budget, re-encode at progressively lower quality
+	var q: float = quality - 0.15
+	while base64.length() > BridgeConfig.MAX_BASE64_LENGTH and q >= 0.2:
+		buffer = image.save_jpg_to_buffer(q)
+		base64 = Marshalls.raw_to_base64(buffer)
+		q -= 0.15
+
+	return base64
+
+
 ## Determine the screen region for a node.
 static func _get_node_rect(node: Node, viewport: Viewport) -> Rect2i:
 	if node is Control:
 		var rect: Rect2 = node.get_global_rect()
-		# Add some padding
 		var padding: float = 10.0
 		rect = rect.grow(padding)
 		return Rect2i(int(rect.position.x), int(rect.position.y), int(rect.size.x), int(rect.size.y))
 
 	if node is Node2D:
-		# Center a region around the node's global position
 		var pos: Vector2 = node.global_position
 		var region_size: float = 200.0
 		return Rect2i(

@@ -4,9 +4,9 @@ class_name EditorScreenshot
 extends RefCounted
 
 
-## Capture the editor and return as base64 PNG.
+## Capture the editor and return as base64 JPEG.
 ## mode: "viewport" = just the 2D/3D main screen canvas, "full" = entire editor window.
-static func capture(width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: int = BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, mode: String = "viewport") -> Dictionary:
+static func capture(width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: int = BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, mode: String = "viewport", quality: float = BridgeConfig.DEFAULT_SCREENSHOT_QUALITY) -> Dictionary:
 	var image: Image = null
 	var actual_mode: String = mode
 
@@ -28,7 +28,7 @@ static func capture(width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: 
 	if image == null:
 		return {"error": "Failed to capture editor screenshot — no available capture method"}
 
-	return _process_image(image, width, height, actual_mode)
+	return _process_image(image, width, height, actual_mode, quality)
 
 
 ## Capture just the 2D/3D editor main screen canvas.
@@ -59,17 +59,24 @@ static func _capture_full() -> Image:
 	return null
 
 
-## Process a captured image: resize and encode to base64 PNG.
-static func _process_image(image: Image, width: int, height: int, mode: String) -> Dictionary:
+## Process a captured image: resize and encode to base64 JPEG with size budget.
+static func _process_image(image: Image, width: int, height: int, mode: String, quality: float) -> Dictionary:
 	if width > 0 and height > 0:
 		image.resize(width, height, Image.INTERPOLATE_LANCZOS)
 
-	var buffer: PackedByteArray = image.save_png_to_buffer()
+	var buffer: PackedByteArray = image.save_jpg_to_buffer(quality)
 	var base64: String = Marshalls.raw_to_base64(buffer)
+
+	# If over budget, re-encode at progressively lower quality
+	var q: float = quality - 0.15
+	while base64.length() > BridgeConfig.MAX_BASE64_LENGTH and q >= 0.2:
+		buffer = image.save_jpg_to_buffer(q)
+		base64 = Marshalls.raw_to_base64(buffer)
+		q -= 0.15
 
 	return {
 		"image": base64,
-		"mime": "image/png",
+		"mime": "image/jpeg",
 		"size": [image.get_width(), image.get_height()],
 		"context": "editor",
 		"mode": mode,

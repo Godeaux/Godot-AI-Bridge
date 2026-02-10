@@ -28,7 +28,8 @@ func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 
 	var custom_root: String = request.query_params.get("root", "")
 	var depth: int = int(request.query_params.get("depth", str(BridgeConfig.MAX_SNAPSHOT_DEPTH)))
-	var include_screenshot: bool = request.query_params.get("include_screenshot", "true") == "true"
+	var include_screenshot: bool = request.query_params.get("include_screenshot", "false") == "true"
+	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
 
 	var target: Node = root
 	if custom_root != "":
@@ -45,7 +46,7 @@ func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 		# Wait two frames for rendering to complete
 		await _tree.process_frame
 		await _tree.process_frame
-		var screenshot: Dictionary = RuntimeScreenshot.capture(viewport)
+		var screenshot: Dictionary = RuntimeScreenshot.capture(viewport, BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality)
 		result["screenshot"] = screenshot.get("image", null)
 	else:
 		result["screenshot"] = null
@@ -57,12 +58,13 @@ func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 func handle_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var width: int = int(request.query_params.get("width", str(BridgeConfig.DEFAULT_SCREENSHOT_WIDTH)))
 	var height: int = int(request.query_params.get("height", str(BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT)))
+	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
 	var viewport: Viewport = _tree.root
 
 	await _tree.process_frame
 	await _tree.process_frame
 
-	return RuntimeScreenshot.capture(viewport, width, height)
+	return RuntimeScreenshot.capture(viewport, width, height, quality)
 
 
 ## GET /screenshot/node — Capture a specific node's region.
@@ -71,6 +73,7 @@ func handle_screenshot_node(request: BridgeHTTPServer.BridgeRequest) -> Dictiona
 	var path: String = request.query_params.get("path", "")
 	var width: int = int(request.query_params.get("width", "0"))
 	var height: int = int(request.query_params.get("height", "0"))
+	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
 
 	var root: Node = _get_scene_root()
 	if root == null:
@@ -87,7 +90,7 @@ func handle_screenshot_node(request: BridgeHTTPServer.BridgeRequest) -> Dictiona
 	await _tree.process_frame
 	await _tree.process_frame
 
-	return RuntimeScreenshot.capture_node(node, _tree.root, width, height)
+	return RuntimeScreenshot.capture_node(node, _tree.root, width, height, quality)
 
 
 ## POST /click — Click at screen coordinates.
