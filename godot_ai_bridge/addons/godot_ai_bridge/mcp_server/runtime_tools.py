@@ -11,7 +11,8 @@ import base64
 import time
 from typing import Any
 
-from fastmcp import FastMCP, Image
+from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
 from client import runtime
 
 
