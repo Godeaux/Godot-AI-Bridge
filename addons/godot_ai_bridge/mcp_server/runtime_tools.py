@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from fastmcp import FastMCP
-from client import runtime
+from client import editor, runtime
 
 
 def _b64_image(b64_data: str) -> dict[str, str]:
@@ -25,10 +25,65 @@ def _b64_image(b64_data: str) -> dict[str, str]:
 
 GAME_NOT_RUNNING_MSG = "Game is not running. Use godot_run_game() to start it first."
 
+# Markers that indicate an error line in Godot console / log output.
+_ERROR_MARKERS = ("error", "exception", "traceback", "script error", "node not found")
+
+
+def _is_error_line(line: str) -> bool:
+    """Return True if *line* looks like an error in Godot output."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    return any(m in lowered for m in _ERROR_MARKERS)
+
+
 # Cache runtime availability to avoid a full HTTP round-trip on every tool call.
 # After a successful check, we trust the runtime is up for a short window.
 _runtime_cache: dict[str, float] = {"last_ok": 0.0}
-_CACHE_TTL = 5.0  # seconds
+_CACHE_TTL = 2.0  # seconds
+
+
+async def _get_crash_diagnostics() -> str:
+    """Fetch debugger/console output from the editor to diagnose a game crash.
+
+    Called when the runtime bridge was previously reachable but is now gone.
+    The editor bridge (port 9899) stays alive even when the game dies, so we
+    can pull the last log output to tell the agent what went wrong.
+    """
+    error_lines: list[str] = []
+    try:
+        log = await editor.get("/debugger/output")
+        output = log.get("output", "")
+        if output:
+            for line in output.split("\n"):
+                if line.strip() and _is_error_line(line):
+                    error_lines.append(line.strip())
+    except Exception:
+        pass  # Editor may be unreachable too — best effort
+
+    if not error_lines:
+        return (
+            "Game crashed or was stopped — no error details found in the log. "
+            "Use godot_get_debugger_output() for the full log, or "
+            "godot_run_game(strict=true) to relaunch with error gating."
+        )
+
+    # Deduplicate while preserving order, keep last 10
+    seen: set[str] = set()
+    unique: list[str] = []
+    for line in error_lines:
+        if line not in seen:
+            seen.add(line)
+            unique.append(line)
+    unique = unique[-10:]
+
+    return (
+        "Game crashed or was stopped unexpectedly. Errors found in log:\n\n"
+        + "\n".join(f"  {line}" for line in unique)
+        + "\n\nUse godot_get_debugger_output() for the full log. "
+        "Fix the errors, then godot_run_game(strict=true) to relaunch."
+    )
 
 
 async def _check_runtime() -> str | None:
@@ -37,11 +92,19 @@ async def _check_runtime() -> str | None:
     Uses a short TTL cache: after a successful check, skip re-checking for a
     few seconds. This eliminates the double-request overhead on rapid tool
     sequences while still detecting a stopped game within seconds.
+
+    When the game was previously running but is now gone, fetches crash
+    diagnostics from the editor bridge so the agent knows *why* it died.
     """
     now = time.monotonic()
     if now - _runtime_cache["last_ok"] < _CACHE_TTL:
         return None
     if not await runtime.is_available():
+        was_previously_running = _runtime_cache["last_ok"] > 0
+        # Invalidate cache so subsequent calls don't wait for TTL
+        _runtime_cache["last_ok"] = 0.0
+        if was_previously_running:
+            return await _get_crash_diagnostics()
         return GAME_NOT_RUNNING_MSG
     _runtime_cache["last_ok"] = now
     return None
