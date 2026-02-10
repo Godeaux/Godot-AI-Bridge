@@ -10,7 +10,8 @@ import asyncio
 import base64
 from typing import Any
 
-from fastmcp import FastMCP, Image
+from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
 from client import editor, runtime
 
 
