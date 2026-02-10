@@ -85,9 +85,13 @@ Runtime tools become available when you run the game via `godot_run_game`.
 
 **Editor tools** (`godot_*`):
 - Create/edit scenes and nodes (add, remove, rename, duplicate, reparent, instance scenes)
-- Read/write/create scripts
+- Read/write/create scripts, check for errors, read debugger output
+- Inspect and set node properties, list all editable properties with type info
+- Wire up signal connections (list, connect, disconnect)
+- Manage node groups (add to group, remove from group)
 - Search the scene tree (by name, type, or group)
 - Search project files, read project settings, input map, autoloads
+- Create and configure input actions and key/button bindings
 - Run/stop the game
 - Take editor screenshots (viewport or full editor)
 
@@ -95,6 +99,7 @@ Runtime tools become available when you run the game via `godot_run_game`.
 - Scene tree snapshots with stable node refs and screenshots
 - Input injection: click, key press, action trigger, mouse move, multi-step sequences
 - Deep node state reading (velocity, animation state, overlapping bodies, etc.)
+- Modify node properties at runtime (speed, health, position — like the Inspector during play)
 - Wait for time or conditions (property equals, node exists/freed, signal)
 - Pause/unpause, time scale control
 - Console output, snapshot diffs, scene change history

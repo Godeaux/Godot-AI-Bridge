@@ -33,11 +33,20 @@ mcp = FastMCP(
     "godot-ai-bridge",
     instructions=(
         "You have access to tools for controlling the Godot game engine. "
-        "Editor tools (godot_*) control the Godot Editor — editing scenes, scripts, "
-        "and project files. Runtime tools (game_*) interact with the running game — "
-        "taking snapshots, injecting input, and reading state. "
+        "Editor tools (godot_*) control the Godot Editor — editing scenes, "
+        "scripts, properties, signals, groups, input maps, and project files. "
+        "Runtime tools (game_*) interact with the running game — taking snapshots, "
+        "injecting input, reading and modifying state.\n\n"
         "Use godot_run_game to start the game, then game_snapshot as your primary "
         "observation tool. Always snapshot before and after interactions.\n\n"
+        "Key tools beyond basic scene/script editing:\n"
+        "- godot_list_signals / godot_connect_signal / godot_disconnect_signal — "
+        "wire up signal connections between nodes\n"
+        "- godot_add_to_group / godot_remove_from_group — tag nodes for group lookup\n"
+        "- godot_add_input_action / godot_add_input_binding — create and bind "
+        "input actions (use godot_get_input_map to see existing ones)\n"
+        "- game_set_property — modify node properties at runtime (speed, health, "
+        "position) without stopping the game, like using the Inspector during play\n\n"
 
         "## Error Recovery — ALWAYS attempt to fix errors yourself\n\n"
         "When you encounter ANY error from these tools, your job is to diagnose "
