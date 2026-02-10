@@ -1,9 +1,18 @@
-"""HTTP client helper for communicating with Godot editor and runtime bridges."""
+"""HTTP client helper for communicating with Godot editor and runtime bridges.
+
+Every call has a hard 30-second cap. If Godot hasn't responded by then, the
+request fails immediately so the MCP tool can report an error instead of
+leaving the AI agent hanging.
+"""
 
 from __future__ import annotations
 
 import httpx
 from typing import Any
+
+# Hard ceiling — no single HTTP request to Godot should ever take longer than
+# this.  Individual callers can pass a *shorter* timeout but never a longer one.
+MAX_TIMEOUT: float = 30.0
 
 
 class GodotClient:
@@ -16,12 +25,18 @@ class GodotClient:
 
     def __init__(self, host: str, port: int, timeout: float = 30.0) -> None:
         self.base_url = f"http://{host}:{port}"
-        self.timeout = timeout
+        self.timeout = min(timeout, MAX_TIMEOUT)
         self._client: httpx.AsyncClient | None = None
+
+    def _effective_timeout(self, override: float | None) -> float:
+        """Return the timeout to use, clamped to MAX_TIMEOUT."""
+        if override is not None:
+            return min(override, MAX_TIMEOUT)
+        return self.timeout
 
     def _get_client(self, timeout_override: float | None = None) -> httpx.AsyncClient:
         """Get or create the persistent HTTP client."""
-        t = timeout_override or self.timeout
+        t = self._effective_timeout(timeout_override)
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
@@ -33,34 +48,48 @@ class GodotClient:
         self, path: str, params: dict[str, Any] | None = None, timeout: float | None = None,
     ) -> dict[str, Any]:
         """Send a GET request and return the JSON response."""
+        t = self._effective_timeout(timeout)
         try:
             client = self._get_client(timeout)
-            resp = await client.get(path, params=params, timeout=timeout)
+            resp = await client.get(path, params=params, timeout=t)
             resp.raise_for_status()
             return resp.json()
-        except httpx.ConnectError:
-            # Connection pool might be stale — retry with a fresh client
+        except (httpx.ConnectError, httpx.ReadError, httpx.WriteError):
+            # Connection pool might be stale — retry once with a fresh client
             await self._reset_client()
             client = self._get_client(timeout)
-            resp = await client.get(path, params=params, timeout=timeout)
+            resp = await client.get(path, params=params, timeout=t)
             resp.raise_for_status()
             return resp.json()
+        except httpx.TimeoutException:
+            await self._reset_client()
+            raise httpx.TimeoutException(
+                f"Godot did not respond within {t}s on GET {path} — "
+                f"the editor/game may have crashed or is unresponsive"
+            )
 
     async def post(
         self, path: str, json: dict[str, Any] | None = None, timeout: float | None = None,
     ) -> dict[str, Any]:
         """Send a POST request with a JSON body and return the JSON response."""
+        t = self._effective_timeout(timeout)
         try:
             client = self._get_client(timeout)
-            resp = await client.post(path, json=json or {}, timeout=timeout)
+            resp = await client.post(path, json=json or {}, timeout=t)
             resp.raise_for_status()
             return resp.json()
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ReadError, httpx.WriteError):
             await self._reset_client()
             client = self._get_client(timeout)
-            resp = await client.post(path, json=json or {}, timeout=timeout)
+            resp = await client.post(path, json=json or {}, timeout=t)
             resp.raise_for_status()
             return resp.json()
+        except httpx.TimeoutException:
+            await self._reset_client()
+            raise httpx.TimeoutException(
+                f"Godot did not respond within {t}s on POST {path} — "
+                f"the editor/game may have crashed or is unresponsive"
+            )
 
     async def is_available(self) -> bool:
         """Check if this bridge server is reachable."""

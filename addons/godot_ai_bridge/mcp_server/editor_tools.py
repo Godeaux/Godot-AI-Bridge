@@ -563,11 +563,13 @@ def register_editor_tools(mcp: FastMCP) -> None:
 
         # Give the editor a moment to process the deferred play call and
         # compile/launch the game before we start polling the runtime bridge.
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(1.5)
 
-        # Poll until runtime bridge is available
-        for i in range(40):  # ~4 more seconds of polling
-            await asyncio.sleep(0.1)
+        # Poll until runtime bridge is available (~15 more seconds of polling).
+        # Large projects can take a while to boot, so we give plenty of time
+        # before declaring "game failed to start".
+        for i in range(60):  # ~15 more seconds of polling (60 × 0.25s)
+            await asyncio.sleep(0.25)
             if await runtime.is_available():
                 info = await runtime.get("/info")
                 scene_name = info.get("current_scene", scene or "main scene")

@@ -232,6 +232,21 @@ func _parse_query_string(query: String) -> Dictionary:
 func _handle_request(conn: ClientConnection) -> void:
 	var route_key: String = "%s %s" % [conn.request.method, conn.request.path]
 
+	# Validate request was parsed correctly
+	if conn.request.method == "" or conn.request.path == "":
+		_log_activity("BAD", "???")
+		_send_json_response(conn.peer, 400, {"error": "Malformed request"})
+		_close_connection(conn)
+		return
+
+	# Reject POST requests with Content-Type: application/json but invalid JSON body
+	if conn.request.method == "POST" and conn.request.body != "" and conn.request.json_body == null:
+		if conn.request.headers.get("content-type", "").find("application/json") != -1:
+			_log_activity(conn.request.method, conn.request.path, "invalid JSON body")
+			_send_json_response(conn.peer, 400, {"error": "Invalid JSON in request body"})
+			_close_connection(conn)
+			return
+
 	if _routes.has(route_key):
 		var handler: Callable = _routes[route_key]
 		# await works for both sync and async handlers:

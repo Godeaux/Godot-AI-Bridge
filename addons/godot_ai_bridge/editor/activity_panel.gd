@@ -169,15 +169,20 @@ func _on_copy_config() -> void:
 func _generate_mcp_config() -> String:
 	var server_path: String = _mcp_server_path
 
-	# Generate config that works for most MCP clients
+	# Use python3 on macOS/Linux since "python" often points to Python 2 or
+	# doesn't exist. On Windows, "python" is the standard command.
+	var python_cmd: String = "python"
+	if OS.get_name() != "Windows":
+		python_cmd = "python3"
+
 	var config: String = """{
   "mcpServers": {
     "godot": {
-      "command": "python",
+      "command": "%s",
       "args": ["%s"]
     }
   }
-}""" % server_path
+}""" % [python_cmd, server_path]
 
 	return config
 
@@ -201,6 +206,13 @@ func _color_for_method(method: String) -> String:
 			return "#569cd6"  # blue
 		_:
 			return "#d4d4d4"  # gray
+
+
+func _exit_tree() -> void:
+	if _copy_config_button != null and _copy_config_button.pressed.is_connected(_on_copy_config):
+		_copy_config_button.pressed.disconnect(_on_copy_config)
+	if _clear_button != null and _clear_button.pressed.is_connected(_on_clear):
+		_clear_button.pressed.disconnect(_on_clear)
 
 
 func _on_clear() -> void:

@@ -46,6 +46,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if _routes_handler != null:
+		_routes_handler.cleanup()
 	stop()
 
 

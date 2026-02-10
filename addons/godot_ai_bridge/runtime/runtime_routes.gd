@@ -20,6 +20,12 @@ func _init(tree: SceneTree) -> void:
 	_tree.tree_changed.connect(_on_tree_changed)
 
 
+## Disconnect signals to prevent leaks when the runtime bridge shuts down.
+func cleanup() -> void:
+	if _tree != null and _tree.tree_changed.is_connected(_on_tree_changed):
+		_tree.tree_changed.disconnect(_on_tree_changed)
+
+
 ## Count total nodes in a nested snapshot tree.
 func _count_snapshot_nodes(nodes: Array) -> int:
 	var count: int = nodes.size()

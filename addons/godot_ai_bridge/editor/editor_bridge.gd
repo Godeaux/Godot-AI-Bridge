@@ -52,6 +52,8 @@ func _ready() -> void:
 		print("[Godot AI Bridge] Editor bridge listening on port %d" % BridgeConfig.EDITOR_PORT)
 	else:
 		push_error("[Godot AI Bridge] Failed to start editor bridge on port %d" % BridgeConfig.EDITOR_PORT)
+		if activity_panel != null and activity_panel.has_method("set_status"):
+			activity_panel.set_status("ERROR — Port %d unavailable (is another Godot instance running?)" % BridgeConfig.EDITOR_PORT)
 
 
 func _exit_tree() -> void:
