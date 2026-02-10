@@ -296,6 +296,51 @@ func handle_state(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return result
 
 
+## POST /set_property — Set a property on a node at runtime.
+func handle_set_property(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var ref: String = str(body.get("ref", ""))
+	var path: String = str(body.get("path", ""))
+	var property: String = str(body.get("property", ""))
+	var value: Variant = body.get("value")
+
+	if property == "":
+		return {"error": "Must provide 'property'"}
+
+	var root: Node = _get_scene_root()
+	if root == null:
+		return {"error": "No active scene"}
+
+	var target_key: String = ref if ref != "" else path
+	if target_key == "":
+		return {"error": "Must provide 'ref' or 'path'"}
+
+	var node: Node = _snapshot.resolve_ref(target_key, root)
+	if node == null:
+		return {"error": "Node not found: %s" % target_key}
+
+	# Deserialize the value to the correct Godot type based on the property's type
+	var prop_list: Array[Dictionary] = node.get_property_list()
+	for prop: Dictionary in prop_list:
+		if prop["name"] == property:
+			var target_type: int = prop.get("type", TYPE_NIL)
+			if target_type != TYPE_NIL:
+				value = BridgeSerialization.deserialize_property_value(value, target_type)
+			break
+
+	var old_value: Variant = node.get(property)
+	node.set(property, value)
+	var new_value: Variant = node.get(property)
+
+	return {
+		"ok": true,
+		"property": property,
+		"old_value": BridgeSerialization.serialize(old_value),
+		"new_value": BridgeSerialization.serialize(new_value),
+		"_description": "✏️ Set '%s'.%s" % [target_key, property],
+	}
+
+
 ## POST /call_method — Call a method on a node.
 func handle_call_method(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}

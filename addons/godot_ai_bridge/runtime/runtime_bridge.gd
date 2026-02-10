@@ -28,6 +28,7 @@ func _ready() -> void:
 	register_route("POST", "/mouse_move", _on_mouse_move)
 	register_route("POST", "/sequence", _on_sequence)
 	register_route("GET", "/state", _on_state)
+	register_route("POST", "/set_property", _on_set_property)
 	register_route("POST", "/call_method", _on_call_method)
 	register_route("POST", "/wait", _on_wait)
 	register_route("POST", "/wait_for", _on_wait_for)
@@ -85,6 +86,9 @@ func _on_sequence(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 
 func _on_state(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_state(request)
+
+func _on_set_property(request: BridgeHTTPServer.BridgeRequest) -> Variant:
+	return _routes_handler.handle_set_property(request)
 
 func _on_call_method(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_call_method(request)

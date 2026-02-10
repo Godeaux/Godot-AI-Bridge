@@ -483,6 +483,44 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             result["_description"] = f"📞 Called '{target}'.{method}()"
         return result
 
+    @mcp.tool
+    async def game_set_property(
+        property: str,
+        value: Any,
+        ref: str = "",
+        path: str = "",
+    ) -> dict[str, Any]:
+        """Set a property on a node in the running game.
+
+        Directly modifies a node's property at runtime — like tweaking values
+        in the Inspector while the game is running. Use this to adjust exported
+        variables (speed, health, gravity, etc.) without stopping the game.
+
+        Use game_state() first to see what properties a node has and their
+        current values.
+
+        Args:
+            property: Property name to set (e.g., 'speed', 'health', 'position', 'modulate').
+            value: Value to set. Use arrays for vectors: [100, 200] for Vector2.
+                   Use dicts for colors: {"r": 1, "g": 0, "b": 0, "a": 1}.
+            ref: Node ref from latest snapshot. Preferred.
+            path: Node path as alternative.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        body: dict[str, Any] = {"property": property, "value": value}
+        if ref:
+            body["ref"] = ref
+        if path:
+            body["path"] = path
+        result = await runtime.post("/set_property", body)
+        if "ok" in result and "_description" not in result:
+            target = ref or path
+            result["_description"] = f"✏️ Set '{target}'.{property}"
+        return result
+
     # --- Waiting ---
 
     @mcp.tool
