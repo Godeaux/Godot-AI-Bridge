@@ -7,18 +7,20 @@ Only available when the game is running.
 
 from __future__ import annotations
 
-import base64
 import time
 from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
 from client import runtime
 
 
-def _b64_image(b64_data: str) -> Image:
-    """Decode a base64 JPEG string from Godot into a FastMCP Image."""
-    return Image(data=base64.b64decode(b64_data), format="jpeg")
+def _b64_image(b64_data: str) -> dict[str, str]:
+    """Return a base64 JPEG as an MCP image content block dict.
+
+    FastMCP 2.14.5 can't serialize Image objects inside list[Any] returns,
+    so we return the MCP-protocol image content block directly.
+    """
+    return {"type": "image", "data": b64_data, "mimeType": "image/jpeg"}
 
 
 GAME_NOT_RUNNING_MSG = "Game is not running. Use godot_run_game() to start it first."
