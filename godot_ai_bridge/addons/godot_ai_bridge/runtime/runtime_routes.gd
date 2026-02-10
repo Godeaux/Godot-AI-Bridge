@@ -20,6 +20,15 @@ func _init(tree: SceneTree) -> void:
 	_tree.tree_changed.connect(_on_tree_changed)
 
 
+## Count total nodes in a nested snapshot tree.
+func _count_snapshot_nodes(nodes: Array) -> int:
+	var count: int = nodes.size()
+	for node_data: Variant in nodes:
+		if node_data is Dictionary:
+			count += _count_snapshot_nodes(node_data.get("children", []))
+	return count
+
+
 ## GET /snapshot — Primary observation channel.
 func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var root: Node = _get_scene_root()
@@ -51,6 +60,12 @@ func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	else:
 		result["screenshot"] = null
 
+	var scene_name: String = result.get("scene_name", "unknown")
+	var node_count: int = _count_snapshot_nodes(result.get("nodes", []))
+	var fps: String = str(result.get("fps", "?"))
+	var paused_str: String = " (PAUSED)" if result.get("paused", false) else ""
+	result["_description"] = "📷 Snapshot of '%s' — %d nodes, %s FPS%s" % [scene_name, node_count, fps, paused_str]
+
 	return result
 
 
@@ -64,7 +79,11 @@ func handle_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	await _tree.process_frame
 	await _tree.process_frame
 
-	return RuntimeScreenshot.capture(viewport, width, height, quality)
+	var result: Dictionary = RuntimeScreenshot.capture(viewport, width, height, quality)
+	if not result.has("error"):
+		var size: Array = result.get("size", [width, height])
+		result["_description"] = "📸 Game screenshot (%sx%s)" % [str(size[0]), str(size[1])]
+	return result
 
 
 ## GET /screenshot/node — Capture a specific node's region.
@@ -90,7 +109,10 @@ func handle_screenshot_node(request: BridgeHTTPServer.BridgeRequest) -> Dictiona
 	await _tree.process_frame
 	await _tree.process_frame
 
-	return RuntimeScreenshot.capture_node(node, _tree.root, width, height, quality)
+	var result: Dictionary = RuntimeScreenshot.capture_node(node, _tree.root, width, height, quality)
+	if not result.has("error"):
+		result["_description"] = "📸 Node screenshot '%s'" % target_key
+	return result
 
 
 ## POST /click — Click at screen coordinates.
@@ -105,9 +127,11 @@ func handle_click(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 
 	if body.get("snapshot", false):
 		await _tree.create_timer(0.1).timeout
-		return await handle_snapshot(request)
+		var result: Dictionary = await handle_snapshot(request)
+		result["_description"] = "🖱️ Clicked %s at (%.0f, %.0f)" % [button, x, y]
+		return result
 
-	return {"ok": true}
+	return {"ok": true, "_description": "🖱️ Clicked %s at (%.0f, %.0f)" % [button, x, y]}
 
 
 ## POST /click_node — Click a node by ref or path.
@@ -132,9 +156,11 @@ func handle_click_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 
 	if body.get("snapshot", false):
 		await _tree.create_timer(0.1).timeout
-		return await handle_snapshot(request)
+		var result: Dictionary = await handle_snapshot(request)
+		result["_description"] = "🖱️ Clicked node '%s'" % target_key
+		return result
 
-	return {"ok": true}
+	return {"ok": true, "_description": "🖱️ Clicked node '%s'" % target_key}
 
 
 ## POST /key — Inject a key event.
@@ -148,7 +174,14 @@ func handle_key(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 		return {"error": "Must provide 'key'"}
 
 	await _injector.key(key_name, action, duration)
-	return {"ok": true}
+	var desc: String
+	if action == "hold" and duration > 0:
+		desc = "⌨️ Held '%s' for %ss" % [key_name, str(duration)]
+	elif action == "tap":
+		desc = "⌨️ Tapped '%s'" % key_name
+	else:
+		desc = "⌨️ Key '%s' %s" % [key_name, action]
+	return {"ok": true, "_description": desc}
 
 
 ## POST /action — Inject an InputMap action.
@@ -162,7 +195,8 @@ func handle_action(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 		return {"error": "Must provide 'action'"}
 
 	_injector.trigger_action(action_name, pressed, strength)
-	return {"ok": true}
+	var state: String = "pressed" if pressed else "released"
+	return {"ok": true, "_description": "🎮 Action '%s' %s" % [action_name, state]}
 
 
 ## GET /actions — List available InputMap actions.
@@ -183,7 +217,7 @@ func handle_actions(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 			else:
 				keys.append(str(event))
 		actions[name_str] = {"keys": keys}
-	return {"actions": actions}
+	return {"actions": actions, "_description": "🎮 %d input action(s) available" % actions.size()}
 
 
 ## POST /mouse_move — Inject mouse motion.
@@ -195,7 +229,7 @@ func handle_mouse_move(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var rel_y: float = float(body.get("relative_y", 0))
 
 	_injector.mouse_move(x, y, rel_x, rel_y)
-	return {"ok": true}
+	return {"ok": true, "_description": "🖱️ Mouse moved to (%.0f, %.0f)" % [x, y]}
 
 
 ## POST /sequence — Execute a sequence of input steps.
@@ -214,17 +248,23 @@ func handle_sequence(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 
 	await _injector.execute_sequence(steps, _snapshot, root)
 
+	var desc: String = "🎮 Executed %d-step input sequence" % steps.size()
+
 	if snapshot_after or screenshot_after:
 		await _tree.create_timer(0.1).timeout
 		if snapshot_after:
 			var snap_request := BridgeHTTPServer.BridgeRequest.new()
 			snap_request.query_params = {"include_screenshot": "true" if screenshot_after else "false"}
-			return await handle_snapshot(snap_request)
+			var result: Dictionary = await handle_snapshot(snap_request)
+			result["_description"] = desc
+			return result
 		elif screenshot_after:
 			var ss_request := BridgeHTTPServer.BridgeRequest.new()
-			return await handle_screenshot(ss_request)
+			var result: Dictionary = await handle_screenshot(ss_request)
+			result["_description"] = desc
+			return result
 
-	return {"ok": true}
+	return {"ok": true, "_description": desc}
 
 
 ## GET /state — Deep state for a single node.
@@ -244,7 +284,10 @@ func handle_state(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if node == null:
 		return {"error": "Node not found: %s" % target_key}
 
-	return StateReader.read_state(node)
+	var result: Dictionary = StateReader.read_state(node)
+	if not result.has("error"):
+		result["_description"] = "🔍 State of '%s' (%s)" % [target_key, result.get("type", "?")]
+	return result
 
 
 ## POST /call_method — Call a method on a node.
@@ -273,8 +316,8 @@ func handle_call_method(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if not node.has_method(method_name):
 		return {"error": "Node does not have method: %s" % method_name}
 
-	var result: Variant = node.callv(method_name, args)
-	return {"result": BridgeSerialization.serialize(result)}
+	var call_result: Variant = node.callv(method_name, args)
+	return {"result": BridgeSerialization.serialize(call_result), "_description": "📞 Called '%s'.%s()" % [target_key, method_name]}
 
 
 ## POST /wait — Wait then return snapshot/screenshot.
@@ -298,6 +341,7 @@ func handle_wait(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 		var ss: Dictionary = await handle_screenshot(ss_request)
 		result["screenshot"] = ss.get("image", null)
 
+	result["_description"] = "⏱️ Waited %ss" % str(seconds)
 	return result
 
 
@@ -397,6 +441,8 @@ func handle_wait_for(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 		var ss: Dictionary = await handle_screenshot(ss_request)
 		result["screenshot"] = ss.get("image", null)
 
+	var status: String = "✅ met" if condition_met else "⏳ timed out"
+	result["_description"] = "⏱️ wait_for '%s' — %s after %ss" % [condition, status, str(elapsed)]
 	return result
 
 
@@ -434,6 +480,7 @@ func handle_info(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 		"debug_build": OS.is_debug_build(),
 		"available_actions": actions,
 		"autoloads": autoloads,
+		"_description": "ℹ️ Game info — scene '%s'" % current_scene_path,
 	}
 
 
@@ -443,7 +490,8 @@ func handle_pause(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var paused: bool = body.get("paused", true)
 
 	_tree.paused = paused
-	return {"ok": true, "paused": _tree.paused}
+	var desc: String = "⏸️ Game PAUSED" if paused else "▶️ Game RESUMED"
+	return {"ok": true, "paused": _tree.paused, "_description": desc}
 
 
 ## POST /timescale — Set the game time scale.
@@ -454,7 +502,7 @@ func handle_timescale(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	# Clamp to safe range (0.01 to 10.0)
 	scale = clampf(scale, 0.01, 10.0)
 	Engine.time_scale = scale
-	return {"ok": true, "time_scale": Engine.time_scale}
+	return {"ok": true, "time_scale": Engine.time_scale, "_description": "⏩ Time scale set to %sx" % str(scale)}
 
 
 ## GET /console — Get recent game console/log output.
@@ -486,7 +534,8 @@ func handle_console(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	if content.length() > 6000:
 		content = "...(truncated)\n" + content.substr(content.length() - 6000)
 
-	return {"output": content, "source": log_path, "length": content.length()}
+	var line_count: int = content.count("\n") + 1
+	return {"output": content, "source": log_path, "length": content.length(), "_description": "📟 Console output (%d lines)" % line_count}
 
 
 ## GET /snapshot/diff — Compare current snapshot to previous one.
@@ -506,15 +555,21 @@ func handle_snapshot_diff(request: BridgeHTTPServer.BridgeRequest) -> Dictionary
 			"diff": "first_snapshot",
 			"note": "No previous snapshot to compare. This snapshot is now stored as baseline.",
 			"snapshot": current,
+			"_description": "📊 Snapshot diff — baseline stored",
 		}
 
 	# Compare snapshots
 	var diff: Dictionary = _compute_snapshot_diff(_previous_snapshot, current)
 	_previous_snapshot = current
 
+	var added: int = diff.get("nodes_added", []).size()
+	var removed: int = diff.get("nodes_removed", []).size()
+	var changed: int = diff.get("nodes_changed", {}).size()
+
 	return {
 		"diff": diff,
 		"snapshot": current,
+		"_description": "📊 Snapshot diff — %d added, %d removed, %d changed" % [added, removed, changed],
 	}
 
 
@@ -523,6 +578,7 @@ func handle_scene_history(_request: BridgeHTTPServer.BridgeRequest) -> Dictionar
 	return {
 		"events": _scene_history,
 		"count": _scene_history.size(),
+		"_description": "📜 Scene history — %d event(s)" % _scene_history.size(),
 	}
 
 

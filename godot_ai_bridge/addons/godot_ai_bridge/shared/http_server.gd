@@ -232,15 +232,20 @@ func _parse_query_string(query: String) -> Dictionary:
 func _handle_request(conn: ClientConnection) -> void:
 	var route_key: String = "%s %s" % [conn.request.method, conn.request.path]
 
-	# Log to activity panel if available
-	_log_activity(conn.request.method, conn.request.path)
-
 	if _routes.has(route_key):
 		var handler: Callable = _routes[route_key]
 		# await works for both sync and async handlers:
 		# - sync handlers return immediately with their value
 		# - async handlers suspend until their internal awaits complete
 		var result: Variant = await handler.call(conn.request)
+
+		# Log to activity panel after handler completes, so we can
+		# include the human-readable _description from the result.
+		var summary: String = ""
+		if result is Dictionary and result.has("_description"):
+			summary = result["_description"]
+		_log_activity(conn.request.method, conn.request.path, summary)
+
 		if result is Dictionary or result is Array:
 			_send_json_response(conn.peer, 200, result)
 		elif result is String:
@@ -252,6 +257,7 @@ func _handle_request(conn: ClientConnection) -> void:
 		else:
 			_send_json_response(conn.peer, 200, {"ok": true})
 	else:
+		_log_activity(conn.request.method, conn.request.path)
 		_send_json_response(conn.peer, 404, {"error": "Not found", "path": conn.request.path, "method": conn.request.method})
 
 	_close_connection(conn)
@@ -319,9 +325,9 @@ func _close_connection(conn: ClientConnection) -> void:
 
 
 ## Log an incoming request to the activity panel (if attached).
-func _log_activity(method: String, path: String) -> void:
+func _log_activity(method: String, path: String, summary: String = "") -> void:
 	if activity_panel != null and activity_panel.has_method("log_action"):
-		activity_panel.log_action(method, path)
+		activity_panel.log_action(method, path, summary)
 
 
 ## Find a byte sequence in a PackedByteArray. Returns index or -1.

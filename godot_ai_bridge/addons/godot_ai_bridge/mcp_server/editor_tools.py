@@ -138,8 +138,9 @@ def register_editor_tools(mcp: FastMCP) -> None:
             return {"error": f"Editor not reachable: {e}. Is the Godot editor open with the AI Bridge plugin enabled?"}
         if "error" in data:
             return data
-        root = data.get("root", {})
-        data["_description"] = f"🌳 Scene tree of '{root.get('name', '?')}' ({root.get('type', '?')})"
+        if "_description" not in data:
+            root = data.get("root", {})
+            data["_description"] = f"🌳 Scene tree of '{root.get('name', '?')}' ({root.get('type', '?')})"
         return data
 
     @mcp.tool
@@ -151,7 +152,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             save_path: Where to save the scene (e.g., 'res://scenes/level_2.tscn').
         """
         result = await editor.post("/scene/create", {"root_type": root_type, "save_path": save_path})
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"🆕 Created scene '{save_path}' (root: {root_type})"
         return result
 
@@ -176,7 +177,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         if properties:
             body["properties"] = properties
         result = await editor.post("/node/add", body)
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"➕ Added {type} '{name}' under '{parent_path}'"
         return result
 
@@ -188,7 +189,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             path: Path to the node relative to scene root (e.g., 'Player/OldChild').
         """
         result = await editor.post("/node/remove", {"path": path})
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"🗑️ Removed node '{path}'"
         return result
 
@@ -204,7 +205,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
                    Use strings for resource paths: "res://textures/sprite.png".
         """
         result = await editor.post("/node/set_property", {"path": path, "property": property, "value": value})
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"✏️ Set '{path}'.{property}"
         return result
 
@@ -217,7 +218,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             property: Property name to read.
         """
         result = await editor.get("/node/get_property", {"path": path, "property": property})
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             result["_description"] = f"🔍 '{path}'.{property} = {result.get('value', '?')}"
         return result
 
@@ -225,7 +226,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
     async def godot_save_scene() -> dict[str, Any]:
         """Save the currently edited scene to disk."""
         result = await editor.post("/scene/save")
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = "💾 Scene saved"
         return result
 
@@ -237,7 +238,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             path: Resource path to the scene (e.g., 'res://scenes/main.tscn').
         """
         result = await editor.post("/scene/open", {"path": path})
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"📂 Opened scene '{path}'"
         return result
 
@@ -256,7 +257,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         if new_name:
             body["new_name"] = new_name
         result = await editor.post("/node/duplicate", body)
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"📋 Duplicated '{path}' → '{result.get('name', '?')}'"
         return result
 
@@ -278,7 +279,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             "new_parent": new_parent,
             "keep_global_transform": keep_global_transform,
         })
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"📦 Reparented '{path}' → under '{new_parent}'"
         return result
 
@@ -294,7 +295,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             path: Node path ('.' for root, 'Player', 'UI/Score', etc.).
         """
         result = await editor.get("/node/properties", {"path": path})
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             result["_description"] = f"📜 {result.get('count', '?')} properties on '{result.get('node', path)}' ({result.get('type', '?')})"
         return result
 
@@ -307,7 +308,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             new_name: The new name for the node.
         """
         result = await editor.post("/node/rename", {"path": path, "new_name": new_name})
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"✏️ Renamed '{result.get('old_name', path)}' → '{new_name}'"
         return result
 
@@ -332,7 +333,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         if name:
             body["name"] = name
         result = await editor.post("/node/instance_scene", body)
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"🔗 Instanced '{scene_path}' as '{result.get('name', '?')}' under '{parent_path}'"
         return result
 
@@ -366,7 +367,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         if in_path:
             params["in"] = in_path
         result = await editor.get("/node/find", params)
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             count = result.get("count", 0)
             criteria = " + ".join(filter(None, [
                 f"name='{name}'" if name else "",
@@ -386,7 +387,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             path: Resource path to the script (e.g., 'res://scripts/player.gd').
         """
         result = await editor.get("/script/read", {"path": path})
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             lines = result.get("content", "").count("\n") + 1
             result["_description"] = f"📄 Read '{path}' ({lines} lines)"
         return result
@@ -402,7 +403,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             content: Full script content to write.
         """
         result = await editor.post("/script/write", {"path": path, "content": content})
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             lines = content.count("\n") + 1
             result["_description"] = f"✍️ Wrote '{path}' ({lines} lines)"
         return result
@@ -421,7 +422,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             template: Template type — 'basic' (ready+process), 'empty' (just extends), or 'full' (type-specific).
         """
         result = await editor.post("/script/create", {"path": path, "extends": extends, "template": template})
-        if "ok" in result:
+        if "ok" in result and "_description" not in result:
             result["_description"] = f"🆕 Created script '{path}' (extends {extends})"
         return result
 
@@ -432,18 +433,20 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Returns a list of errors with file paths and messages.
         """
         result = await editor.get("/script/errors")
-        errors = result.get("errors", [])
-        if errors:
-            result["_description"] = f"❌ {len(errors)} script error(s)"
-        else:
-            result["_description"] = "✅ No script errors"
+        if "_description" not in result:
+            errors = result.get("errors", [])
+            if errors:
+                result["_description"] = f"❌ {len(errors)} script error(s)"
+            else:
+                result["_description"] = "✅ No script errors"
         return result
 
     @mcp.tool
     async def godot_get_debugger_output() -> dict[str, Any]:
         """Get recent output from the editor's Output/debugger panel."""
         result = await editor.get("/debugger/output")
-        result["_description"] = "📟 Debugger output"
+        if "_description" not in result:
+            result["_description"] = "📟 Debugger output"
         return result
 
     # --- Project Tools ---
@@ -466,7 +469,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Use this to understand what files exist before reading or modifying them.
         """
         result = await editor.get("/project/structure")
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             file_count = _count_files_in_tree(result.get("tree", []))
             result["_description"] = f"📁 Project structure — {file_count} files"
         return result
@@ -485,7 +488,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         if query:
             params["query"] = query
         result = await editor.get("/project/search", params)
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             matches = len(result.get("files", result.get("results", [])))
             term = pattern or query
             result["_description"] = f"🔎 Search '{term}' — {matches} match(es)"
@@ -499,7 +502,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Use this to understand what input actions are available for game_trigger_action.
         """
         result = await editor.get("/project/input_map")
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             count = len(result.get("actions", {}))
             result["_description"] = f"🎮 Input map — {count} action(s)"
         return result
@@ -508,15 +511,16 @@ def register_editor_tools(mcp: FastMCP) -> None:
     async def godot_get_project_settings() -> dict[str, Any]:
         """Get key project settings: name, main scene, window size, physics FPS, etc."""
         result = await editor.get("/project/settings")
-        name = result.get("name", "?")
-        result["_description"] = f"⚙️ Project settings for '{name}'"
+        if "_description" not in result:
+            name = result.get("name", "?")
+            result["_description"] = f"⚙️ Project settings for '{name}'"
         return result
 
     @mcp.tool
     async def godot_get_autoloads() -> dict[str, Any]:
         """Get all registered autoload singletons and their script paths."""
         result = await editor.get("/project/autoloads")
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             count = len(result.get("autoloads", {}))
             result["_description"] = f"🔌 {count} autoload(s)"
         return result
@@ -673,15 +677,17 @@ def register_editor_tools(mcp: FastMCP) -> None:
         Use this before editing code — changes require a restart to take effect.
         """
         result = await editor.post("/game/stop")
-        result["_description"] = "⏹️ Game stopped"
+        if "_description" not in result:
+            result["_description"] = "⏹️ Game stopped"
         return result
 
     @mcp.tool
     async def godot_is_game_running() -> dict[str, Any]:
         """Check if the game is currently running."""
         result = await editor.get("/game/is_running")
-        running = result.get("running", False)
-        result["_description"] = "🟢 Game is running" if running else "⚫ Game is not running"
+        if "_description" not in result:
+            running = result.get("running", False)
+            result["_description"] = "🟢 Game is running" if running else "⚫ Game is not running"
         return result
 
     # --- Editor Screenshot ---

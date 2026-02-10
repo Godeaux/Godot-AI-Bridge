@@ -189,7 +189,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/click", {"x": x, "y": y, "button": button})
-        result["_description"] = f"🖱️ Clicked {button} at ({x:.0f}, {y:.0f})"
+        if "_description" not in result:
+            result["_description"] = f"🖱️ Clicked {button} at ({x:.0f}, {y:.0f})"
         return result
 
     @mcp.tool
@@ -213,8 +214,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if path:
             body["path"] = path
         result = await runtime.post("/click_node", body)
-        target = ref or path
-        result["_description"] = f"🖱️ Clicked node '{target}'"
+        if "_description" not in result:
+            target = ref or path
+            result["_description"] = f"🖱️ Clicked node '{target}'"
         return result
 
     @mcp.tool
@@ -238,12 +240,13 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/key", {"key": key, "action": action, "duration": duration})
-        if action == "hold" and duration > 0:
-            result["_description"] = f"⌨️ Held '{key}' for {duration}s"
-        elif action == "tap":
-            result["_description"] = f"⌨️ Tapped '{key}'"
-        else:
-            result["_description"] = f"⌨️ Key '{key}' {action}"
+        if "_description" not in result:
+            if action == "hold" and duration > 0:
+                result["_description"] = f"⌨️ Held '{key}' for {duration}s"
+            elif action == "tap":
+                result["_description"] = f"⌨️ Tapped '{key}'"
+            else:
+                result["_description"] = f"⌨️ Key '{key}' {action}"
         return result
 
     @mcp.tool
@@ -267,8 +270,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/action", {"action": action, "pressed": pressed, "strength": strength})
-        state = "pressed" if pressed else "released"
-        result["_description"] = f"🎮 Action '{action}' {state}"
+        if "_description" not in result:
+            state = "pressed" if pressed else "released"
+            result["_description"] = f"🎮 Action '{action}' {state}"
         return result
 
     @mcp.tool
@@ -284,7 +288,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/mouse_move", {"x": x, "y": y})
-        result["_description"] = f"🖱️ Mouse moved to ({x:.0f}, {y:.0f})"
+        if "_description" not in result:
+            result["_description"] = f"🖱️ Mouse moved to ({x:.0f}, {y:.0f})"
         return result
 
     @mcp.tool
@@ -367,7 +372,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if path:
             params["path"] = path
         result = await runtime.get("/state", params)
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             target = ref or path
             node_type = result.get("type", "?")
             result["_description"] = f"🔍 State of '{target}' ({node_type})"
@@ -402,8 +407,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if args:
             body["args"] = args
         result = await runtime.post("/call_method", body)
-        target = ref or path
-        result["_description"] = f"📞 Called '{target}'.{method}()"
+        if "_description" not in result:
+            target = ref or path
+            result["_description"] = f"📞 Called '{target}'.{method}()"
         return result
 
     # --- Waiting ---
@@ -542,8 +548,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/pause", {"paused": paused})
-        state = "⏸️ Game PAUSED" if paused else "▶️ Game RESUMED"
-        result["_description"] = state
+        if "_description" not in result:
+            state = "⏸️ Game PAUSED" if paused else "▶️ Game RESUMED"
+            result["_description"] = state
         return result
 
     @mcp.tool
@@ -568,7 +575,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/timescale", {"scale": scale})
-        result["_description"] = f"⏩ Time scale set to {scale}x"
+        if "_description" not in result:
+            result["_description"] = f"⏩ Time scale set to {scale}x"
         return result
 
     # --- Console & Diagnostics ---
@@ -588,8 +596,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/console")
-        lines = len(result.get("output", "").split("\n")) if result.get("output") else 0
-        result["_description"] = f"📟 Console output ({lines} lines)"
+        if "_description" not in result:
+            lines = len(result.get("output", "").split("\n")) if result.get("output") else 0
+            result["_description"] = f"📟 Console output ({lines} lines)"
         return result
 
     # --- Snapshot Diff ---
@@ -616,7 +625,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/snapshot/diff", {"depth": str(depth)})
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             added = len(result.get("added", []))
             removed = len(result.get("removed", []))
             changed = len(result.get("changed", []))
@@ -638,7 +647,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/scene_history")
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             count = len(result.get("history", []))
             result["_description"] = f"📜 Scene history — {count} event(s)"
         return result
@@ -657,8 +666,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/info")
-        scene = result.get("current_scene", "?")
-        result["_description"] = f"ℹ️ Game info — scene '{scene}'"
+        if "_description" not in result:
+            scene = result.get("current_scene", "?")
+            result["_description"] = f"ℹ️ Game info — scene '{scene}'"
         return result
 
     @mcp.tool
@@ -672,7 +682,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/actions")
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             count = len(result.get("actions", {}))
             result["_description"] = f"🎮 {count} input action(s) available"
         return result
