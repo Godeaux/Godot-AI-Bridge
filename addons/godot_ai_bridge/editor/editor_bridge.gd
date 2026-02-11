@@ -64,6 +64,9 @@ func _ready() -> void:
 	# Agent vision (receives game screenshots from MCP server)
 	register_route("POST", "/agent/vision", _routes_handler.handle_agent_vision)
 
+	# Director (developer sends directives to the AI agent)
+	register_route("GET", "/agent/director", _routes_handler.handle_get_director)
+
 	# Editor screenshot
 	register_route("GET", "/screenshot", _routes_handler.handle_screenshot)
 

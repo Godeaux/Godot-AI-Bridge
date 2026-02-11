@@ -581,6 +581,25 @@ func handle_agent_vision(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	return {"ok": true, "_description": "👁️ Agent vision updated"}
 
 
+## GET /agent/director — Retrieve and clear pending developer directives.
+func handle_get_director(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var bridge: Node = get_bridge()
+	if bridge == null or bridge.activity_panel == null:
+		return {"directives": []}
+
+	if not bridge.activity_panel.has_method("drain_directives"):
+		return {"directives": []}
+
+	var directives: Array = bridge.activity_panel.drain_directives()
+	if directives.is_empty():
+		return {"directives": []}
+
+	return {
+		"directives": directives,
+		"_description": "Director: %d directive(s) from developer" % directives.size(),
+	}
+
+
 ## Get a reference to the parent EditorBridge node.
 func get_bridge() -> Node:
 	return _bridge_ref

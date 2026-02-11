@@ -44,6 +44,7 @@ func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var custom_root: String = request.query_params.get("root", "")
 	var depth: int = int(request.query_params.get("depth", str(BridgeConfig.MAX_SNAPSHOT_DEPTH)))
 	var include_screenshot: bool = request.query_params.get("include_screenshot", "false") == "true"
+	var annotate: bool = request.query_params.get("annotate", "false") == "true"
 	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
 
 	var target: Node = root
@@ -61,8 +62,22 @@ func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 		# Wait two frames for rendering to complete
 		await _tree.process_frame
 		await _tree.process_frame
-		var screenshot: Dictionary = RuntimeScreenshot.capture(viewport, BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality)
-		result["screenshot"] = screenshot.get("image", null)
+
+		if annotate:
+			# Annotated Vision: capture raw → annotate → resize → encode
+			var raw_image: Image = RuntimeScreenshot.capture_raw(viewport)
+			if raw_image != null:
+				var annotations: Array = RuntimeAnnotation.collect_annotations(
+					result.get("nodes", []), _snapshot, root, viewport
+				)
+				raw_image = await RuntimeAnnotation.annotate(raw_image, annotations, _tree)
+				var screenshot: Dictionary = RuntimeScreenshot.encode(raw_image, BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality)
+				result["screenshot"] = screenshot.get("image", null)
+			else:
+				result["screenshot"] = null
+		else:
+			var screenshot: Dictionary = RuntimeScreenshot.capture(viewport, BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality)
+			result["screenshot"] = screenshot.get("image", null)
 	else:
 		result["screenshot"] = null
 
@@ -80,12 +95,29 @@ func handle_screenshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var width: int = int(request.query_params.get("width", str(BridgeConfig.DEFAULT_SCREENSHOT_WIDTH)))
 	var height: int = int(request.query_params.get("height", str(BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT)))
 	var quality: float = float(request.query_params.get("quality", str(BridgeConfig.DEFAULT_SCREENSHOT_QUALITY)))
+	var annotate: bool = request.query_params.get("annotate", "false") == "true"
 	var viewport: Viewport = _tree.root
 
 	await _tree.process_frame
 	await _tree.process_frame
 
-	var result: Dictionary = RuntimeScreenshot.capture(viewport, width, height, quality)
+	var result: Dictionary
+	if annotate:
+		# Annotated: capture raw, take a quick snapshot for refs, annotate, encode
+		var raw_image: Image = RuntimeScreenshot.capture_raw(viewport)
+		if raw_image == null:
+			return {"error": "Failed to capture viewport image"}
+		var root: Node = _get_scene_root()
+		if root != null:
+			var snap_data: Dictionary = _snapshot.take_snapshot(root)
+			var annotations: Array = RuntimeAnnotation.collect_annotations(
+				snap_data.get("nodes", []), _snapshot, root, viewport
+			)
+			raw_image = await RuntimeAnnotation.annotate(raw_image, annotations, _tree)
+		result = RuntimeScreenshot.encode(raw_image, width, height, quality)
+	else:
+		result = RuntimeScreenshot.capture(viewport, width, height, quality)
+
 	if not result.has("error"):
 		var size: Array = result.get("size", [width, height])
 		result["_description"] = "📸 Game screenshot (%sx%s)" % [str(size[0]), str(size[1])]

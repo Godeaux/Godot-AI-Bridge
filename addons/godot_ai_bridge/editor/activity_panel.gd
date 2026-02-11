@@ -1,6 +1,7 @@
 ## Activity panel for the Godot AI Bridge.
 ## Shows setup instructions for new users, then transitions to a live
-## agent vision dashboard with screenshot preview and activity feed.
+## agent vision dashboard with screenshot preview, interactive director
+## controls, and activity feed.
 @tool
 class_name AIBridgeActivityPanel
 extends Control
@@ -16,8 +17,13 @@ var _setup_display: RichTextLabel
 # Split layout (visible after first request)
 var _split_container: HSplitContainer
 var _vision_panel: VBoxContainer
+var _screenshot_container: Control
 var _screenshot_rect: TextureRect
+var _click_overlay: Control
 var _node_info_label: RichTextLabel
+var _director_bar: HBoxContainer
+var _directive_input: LineEdit
+var _directive_send: Button
 var _log_display: RichTextLabel
 
 # --- State ---
@@ -25,6 +31,12 @@ var _log_entries: Array[String] = []
 var _has_received_request: bool = false
 var _request_count: int = 0
 var _mcp_server_path: String = ""
+
+# Director state
+var _markers: Array[Dictionary] = []  # [{id, game_pos: Vector2}]
+var _next_marker_id: int = 1
+var _pending_directives: Array[Dictionary] = []
+var _viewport_size: Vector2 = Vector2.ZERO  # Last known game viewport resolution
 
 const MAX_LOG_ENTRIES: int = 200
 const VISION_PANEL_WIDTH: int = 340
@@ -86,18 +98,26 @@ func _build_ui() -> void:
 	_split_container.visible = false
 	_main_vbox.add_child(_split_container)
 
-	# Left panel: Agent vision
+	# Left panel: Agent vision + director controls
 	_vision_panel = VBoxContainer.new()
 	_vision_panel.custom_minimum_size = Vector2(VISION_PANEL_WIDTH, 0)
 	_split_container.add_child(_vision_panel)
 
-	# Screenshot display
+	# Screenshot container (houses TextureRect + click overlay)
+	_screenshot_container = Control.new()
+	_screenshot_container.custom_minimum_size = Vector2(VISION_PANEL_WIDTH, 180)
+	_screenshot_container.size_flags_horizontal = SIZE_EXPAND_FILL
+	_screenshot_container.size_flags_vertical = SIZE_EXPAND_FILL
+	_screenshot_container.resized.connect(_on_screenshot_resized)
+	_vision_panel.add_child(_screenshot_container)
+
+	# TextureRect for the screenshot
 	_screenshot_rect = TextureRect.new()
 	_screenshot_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_screenshot_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_screenshot_rect.custom_minimum_size = Vector2(VISION_PANEL_WIDTH, 180)
-	_screenshot_rect.size_flags_horizontal = SIZE_EXPAND_FILL
-	_vision_panel.add_child(_screenshot_rect)
+	_screenshot_rect.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	_screenshot_rect.mouse_filter = MOUSE_FILTER_IGNORE
+	_screenshot_container.add_child(_screenshot_rect)
 
 	# Placeholder when no screenshot yet
 	var placeholder := Label.new()
@@ -108,17 +128,41 @@ func _build_ui() -> void:
 	placeholder.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	_screenshot_rect.add_child(placeholder)
 
+	# Click overlay — sits on top, captures clicks, draws markers
+	_click_overlay = Control.new()
+	_click_overlay.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	_click_overlay.mouse_filter = MOUSE_FILTER_STOP
+	_click_overlay.gui_input.connect(_on_overlay_input)
+	_click_overlay.draw.connect(_draw_markers)
+	_screenshot_container.add_child(_click_overlay)
+
 	# Node info below screenshot
 	_node_info_label = RichTextLabel.new()
 	_node_info_label.bbcode_enabled = true
 	_node_info_label.scroll_following = false
-	_node_info_label.size_flags_vertical = SIZE_EXPAND_FILL
 	_node_info_label.size_flags_horizontal = SIZE_EXPAND_FILL
 	_node_info_label.selection_enabled = true
-	_node_info_label.fit_content = false
-	_node_info_label.custom_minimum_size = Vector2(0, 60)
+	_node_info_label.fit_content = true
+	_node_info_label.custom_minimum_size = Vector2(0, 20)
 	_vision_panel.add_child(_node_info_label)
 	_update_node_info({})
+
+	# Director input bar
+	_director_bar = HBoxContainer.new()
+	_director_bar.size_flags_horizontal = SIZE_EXPAND_FILL
+	_vision_panel.add_child(_director_bar)
+
+	_directive_input = LineEdit.new()
+	_directive_input.placeholder_text = "Direct the AI..."
+	_directive_input.size_flags_horizontal = SIZE_EXPAND_FILL
+	_directive_input.text_submitted.connect(_on_directive_submitted)
+	_director_bar.add_child(_directive_input)
+
+	_directive_send = Button.new()
+	_directive_send.text = "Send"
+	_directive_send.tooltip_text = "Send a directive to the AI agent (also: click on the screenshot to place markers)"
+	_directive_send.pressed.connect(_on_directive_send_pressed)
+	_director_bar.add_child(_directive_send)
 
 	# Right panel: Activity log
 	_log_display = RichTextLabel.new()
@@ -130,6 +174,175 @@ func _build_ui() -> void:
 	_log_display.fit_content = false
 	_split_container.add_child(_log_display)
 
+
+# --- Director: Click & Marker System ---
+
+## Handle mouse clicks on the screenshot overlay.
+func _on_overlay_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			var game_pos: Variant = _map_click_to_viewport(event.position)
+			if game_pos == null:
+				return  # Click in letterbox area
+			_markers.append({
+				"id": _next_marker_id,
+				"game_pos": game_pos as Vector2,
+			})
+			_next_marker_id += 1
+			_click_overlay.queue_redraw()
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			# Right-click clears markers
+			if not _markers.is_empty():
+				_markers.clear()
+				_next_marker_id = 1
+				_click_overlay.queue_redraw()
+
+
+## Map a click position on the TextureRect to game viewport coordinates.
+func _map_click_to_viewport(click_pos: Vector2) -> Variant:
+	var tex: Texture2D = _screenshot_rect.texture
+	if tex == null:
+		return null
+
+	var tex_size: Vector2 = tex.get_size()
+	var rect_size: Vector2 = _screenshot_container.size
+
+	# STRETCH_KEEP_ASPECT_CENTERED: uniform scale, centered with letterboxing
+	var scale_factor: float = minf(rect_size.x / tex_size.x, rect_size.y / tex_size.y)
+	var display_w: float = tex_size.x * scale_factor
+	var display_h: float = tex_size.y * scale_factor
+	var offset_x: float = (rect_size.x - display_w) * 0.5
+	var offset_y: float = (rect_size.y - display_h) * 0.5
+
+	var local_x: float = click_pos.x - offset_x
+	var local_y: float = click_pos.y - offset_y
+
+	# Reject clicks in letterbox bars
+	if local_x < 0.0 or local_x > display_w or local_y < 0.0 or local_y > display_h:
+		return null
+
+	# Map to texture pixels
+	var tex_x: float = local_x / scale_factor
+	var tex_y: float = local_y / scale_factor
+
+	# Scale from screenshot resolution to actual game viewport
+	if _viewport_size.x > 0 and _viewport_size.y > 0:
+		tex_x = tex_x * (_viewport_size.x / tex_size.x)
+		tex_y = tex_y * (_viewport_size.y / tex_size.y)
+
+	return Vector2(tex_x, tex_y)
+
+
+## Map game viewport coordinates to panel pixel position on the screenshot.
+func _map_game_to_panel(game_pos: Vector2) -> Vector2:
+	var tex: Texture2D = _screenshot_rect.texture
+	if tex == null:
+		return Vector2.ZERO
+
+	var tex_size: Vector2 = tex.get_size()
+	var rect_size: Vector2 = _screenshot_container.size
+
+	# Game viewport → texture pixels
+	var tex_x: float = game_pos.x
+	var tex_y: float = game_pos.y
+	if _viewport_size.x > 0 and _viewport_size.y > 0:
+		tex_x = game_pos.x * (tex_size.x / _viewport_size.x)
+		tex_y = game_pos.y * (tex_size.y / _viewport_size.y)
+
+	# Texture pixels → panel display pixels
+	var scale_factor: float = minf(rect_size.x / tex_size.x, rect_size.y / tex_size.y)
+	var display_w: float = tex_size.x * scale_factor
+	var display_h: float = tex_size.y * scale_factor
+	var offset_x: float = (rect_size.x - display_w) * 0.5
+	var offset_y: float = (rect_size.y - display_h) * 0.5
+
+	return Vector2(offset_x + tex_x * scale_factor, offset_y + tex_y * scale_factor)
+
+
+## Draw all placed markers on the overlay.
+func _draw_markers() -> void:
+	if _click_overlay == null:
+		return
+
+	var font: Font = ThemeDB.fallback_font
+	var font_size: int = 11
+
+	for marker: Dictionary in _markers:
+		var panel_pos: Vector2 = _map_game_to_panel(marker["game_pos"])
+		var radius: float = 8.0
+
+		# White ring + red fill
+		_click_overlay.draw_circle(panel_pos, radius + 2.0, Color(1, 1, 1, 0.8))
+		_click_overlay.draw_circle(panel_pos, radius, Color(0.9, 0.2, 0.2, 0.9))
+
+		# Number label centered in the circle
+		var label_str: String = str(marker["id"])
+		var text_size: Vector2 = font.get_string_size(label_str, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
+		var text_pos: Vector2 = Vector2(
+			panel_pos.x - text_size.x * 0.5,
+			panel_pos.y + text_size.y * 0.3
+		)
+		_click_overlay.draw_string(font, text_pos, label_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
+
+
+## Refresh marker positions when the screenshot container resizes.
+func _on_screenshot_resized() -> void:
+	if _click_overlay:
+		_click_overlay.queue_redraw()
+
+
+# --- Director: Text Directives ---
+
+func _on_directive_submitted(_text: String) -> void:
+	_submit_directive()
+
+
+func _on_directive_send_pressed() -> void:
+	_submit_directive()
+
+
+## Bundle text + markers into a directive and queue it for the AI.
+func _submit_directive() -> void:
+	var text: String = _directive_input.text.strip_edges()
+	if text == "" and _markers.is_empty():
+		return
+
+	var directive: Dictionary = {
+		"text": text,
+		"markers": [],
+		"timestamp": Time.get_unix_time_from_system(),
+	}
+
+	for marker: Dictionary in _markers:
+		directive["markers"].append({
+			"id": marker["id"],
+			"x": snapf(marker["game_pos"].x, 0.5),
+			"y": snapf(marker["game_pos"].y, 0.5),
+		})
+
+	_pending_directives.append(directive)
+
+	# Log it in the activity feed
+	var summary: String = text.substr(0, 60)
+	if _markers.size() > 0:
+		summary += " [%d marker(s)]" % _markers.size()
+	log_action("DIRECTOR", "/directive", summary)
+
+	# Reset UI
+	_directive_input.text = ""
+	_markers.clear()
+	_next_marker_id = 1
+	_click_overlay.queue_redraw()
+
+
+## Return all pending director directives and clear the queue.
+func drain_directives() -> Array[Dictionary]:
+	var result: Array[Dictionary] = _pending_directives.duplicate()
+	_pending_directives.clear()
+	return result
+
+
+# --- Setup & Lifecycle ---
 
 ## Show setup instructions for first-time users.
 func _show_setup_instructions() -> void:
@@ -224,6 +437,12 @@ func update_vision(image_base64: String, node_summary: Dictionary = {}) -> void:
 			if child is Label:
 				child.queue_free()
 
+	# Store viewport size for coordinate mapping
+	var vp_w: float = float(node_summary.get("viewport_w", 0))
+	var vp_h: float = float(node_summary.get("viewport_h", 0))
+	if vp_w > 0 and vp_h > 0:
+		_viewport_size = Vector2(vp_w, vp_h)
+
 	_update_node_info(node_summary)
 
 
@@ -317,6 +536,8 @@ func _color_for_method(method: String) -> String:
 			return "#dcdcaa"  # yellow
 		"SYSTEM":
 			return "#569cd6"  # blue
+		"DIRECTOR":
+			return "#c586c0"  # purple
 		_:
 			return "#d4d4d4"  # gray
 
@@ -331,6 +552,9 @@ func _exit_tree() -> void:
 func _on_clear() -> void:
 	_log_entries.clear()
 	_request_count = 0
+	_markers.clear()
+	_next_marker_id = 1
+	_pending_directives.clear()
 	if _log_display:
 		_log_display.clear()
 	if _screenshot_rect:
@@ -346,6 +570,8 @@ func _on_clear() -> void:
 		placeholder.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		placeholder.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 		_screenshot_rect.add_child(placeholder)
+	if _click_overlay:
+		_click_overlay.queue_redraw()
 	if _node_info_label:
 		_update_node_info({})
 	set_status("Log cleared")

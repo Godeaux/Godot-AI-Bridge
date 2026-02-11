@@ -34,16 +34,55 @@ async def _push_vision(image_b64: str, snapshot_data: dict[str, Any] | None = No
     try:
         body: dict[str, Any] = {"image": image_b64}
         if snapshot_data:
+            # Parse viewport_size from snapshot data (comes as [w, h] array)
+            vp_size = snapshot_data.get("viewport_size", [0, 0])
+            vp_w = vp_size[0] if isinstance(vp_size, (list, tuple)) and len(vp_size) >= 2 else 0
+            vp_h = vp_size[1] if isinstance(vp_size, (list, tuple)) and len(vp_size) >= 2 else 0
             body["summary"] = {
                 "scene": snapshot_data.get("scene_name", ""),
                 "node_count": _count_nodes(snapshot_data.get("nodes", [])),
                 "fps": snapshot_data.get("fps", "?"),
                 "paused": snapshot_data.get("paused", False),
                 "frame": snapshot_data.get("frame", "?"),
+                "viewport_w": vp_w,
+                "viewport_h": vp_h,
             }
         await editor.post("/agent/vision", body, timeout=2.0)
     except Exception:
         pass  # Non-critical — don't break the tool if the editor is busy
+
+
+async def _fetch_director_notes() -> list[dict[str, Any]]:
+    """Fetch pending developer director directives from the editor bridge.
+
+    Returns the list of directives, or empty list if none/unreachable.
+    """
+    try:
+        data = await editor.get("/agent/director", timeout=2.0)
+        return data.get("directives", [])
+    except Exception:
+        return []
+
+
+def _format_director_notes(directives: list[dict[str, Any]]) -> str:
+    """Format director directives into a text block for the agent."""
+    lines = [
+        "DEVELOPER DIRECTOR NOTE (from the human watching in the Godot editor):",
+        "",
+    ]
+    for directive in directives:
+        text = directive.get("text", "")
+        markers = directive.get("markers", [])
+        if text:
+            lines.append(f"  Message: {text}")
+        if markers:
+            for m in markers:
+                lines.append(f"  Marker #{m['id']} at game position ({m['x']:.0f}, {m['y']:.0f})")
+    lines.append("")
+    lines.append("You MUST acknowledge and act on these director notes. They represent")
+    lines.append("real-time guidance from the developer who is watching your work.")
+    return "\n".join(lines)
+
 
 # Markers that indicate an error line in Godot console / log output.
 _ERROR_MARKERS = ("error", "exception", "traceback", "script error", "node not found")
@@ -156,6 +195,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         root: str = "",
         depth: int = 12,
         include_screenshot: bool = False,
+        annotate: bool = True,
         quality: float = 0.75,
     ) -> list[Any]:
         """Get a structured scene tree snapshot from the running game with stable refs.
@@ -166,6 +206,11 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         Each node gets a short ref like "n1", "n5" — use these with game_click_node,
         game_state, etc. Refs are only valid until the next snapshot call.
+
+        When include_screenshot=True, the screenshot shows ref labels (n1, n5, etc.)
+        drawn directly on the image next to each visible node, with bounding boxes
+        around UI elements. This makes it easy to see which ref corresponds to which
+        on-screen element. Set annotate=False to get a clean screenshot without labels.
 
         IMPORTANT — Keep snapshots lean to conserve context:
         - Use root to focus on a subtree: root='Player' or root='HUD'
@@ -178,6 +223,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             root: Node path to snapshot from (e.g., 'Player', 'HUD'). Empty = full scene.
             depth: Max tree depth (default 12). Use 3-4 for focused snapshots.
             include_screenshot: Whether to include a screenshot (default False).
+            annotate: Draw ref labels on screenshot (default True). Only applies when
+                include_screenshot=True.
             quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
         """
         err = await _check_runtime()
@@ -187,6 +234,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         params: dict[str, str] = {
             "depth": str(depth),
             "include_screenshot": "true" if include_screenshot else "false",
+            "annotate": "true" if (annotate and include_screenshot) else "false",
             "quality": str(quality),
         }
         if root:
@@ -210,36 +258,63 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             result.append(_b64_image(screenshot_data))
             await _push_vision(screenshot_data, data)
 
+        # Check for developer director notes
+        director_notes = await _fetch_director_notes()
+        if director_notes:
+            result.insert(0, _format_director_notes(director_notes))
+
         return result
 
     # --- Screenshots ---
 
     @mcp.tool
-    async def game_screenshot(width: int = 640, height: int = 360, quality: float = 0.75) -> list[Any]:
+    async def game_screenshot(
+        width: int = 640,
+        height: int = 360,
+        quality: float = 0.75,
+        annotate: bool = True,
+    ) -> list[Any]:
         """Capture the running game viewport as a screenshot.
 
         Use game_snapshot for structured data. Call this when you only need the image,
         or need a custom resolution.
 
+        By default, the screenshot includes ref labels (n1, n5, etc.) drawn next to
+        visible nodes, matching the refs from the latest snapshot. Set annotate=False
+        for a clean image without annotations.
+
         Args:
             width: Screenshot width in pixels (default 640).
             height: Screenshot height in pixels (default 360).
             quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
+            annotate: Draw ref labels on the screenshot (default True).
         """
         err = await _check_runtime()
         if err:
             return [err]
 
-        data = await runtime.get("/screenshot", {"width": str(width), "height": str(height), "quality": str(quality)})
+        data = await runtime.get("/screenshot", {
+            "width": str(width),
+            "height": str(height),
+            "quality": str(quality),
+            "annotate": "true" if annotate else "false",
+        })
         if "error" in data:
             return [str(data["error"])]
 
         image_data = data["image"]
         await _push_vision(image_data)
-        return [
+        result: list[Any] = [
             f"Game screenshot ({data['size'][0]}x{data['size'][1]}, frame {data.get('frame', '?')})",
             _b64_image(image_data),
         ]
+
+        # Check for developer director notes
+        director_notes = await _fetch_director_notes()
+        if director_notes:
+            result.insert(0, _format_director_notes(director_notes))
+
+        return result
 
     @mcp.tool
     async def game_screenshot_node(ref: str = "", path: str = "") -> list[Any]:

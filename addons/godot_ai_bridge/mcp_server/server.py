@@ -98,7 +98,17 @@ mcp = FastMCP(
 
         "Fatal error patterns (always block on these): "
         "Node not found, Cannot call method, Invalid access, Invalid call, "
-        "SCRIPT ERROR, Parse Error."
+        "SCRIPT ERROR, Parse Error.\n\n"
+
+        "## Developer Director Notes\n\n"
+        "When a tool response contains a 'DEVELOPER DIRECTOR NOTE' block, the "
+        "developer is actively watching in the Godot editor panel and has sent "
+        "you real-time guidance. These notes may include text instructions and "
+        "numbered marker positions (game viewport coordinates where the developer "
+        "clicked on the screenshot). Always acknowledge director notes, explain "
+        "how you are incorporating the feedback, and prioritize them over your "
+        "current plan. Markers reference specific locations in the game viewport — "
+        "use them to understand which objects or areas the developer is pointing at."
     ),
 )
 

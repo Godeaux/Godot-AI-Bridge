@@ -3,11 +3,17 @@ class_name RuntimeScreenshot
 extends RefCounted
 
 
-## Capture the running game viewport and return as base64 JPEG.
-static func capture(viewport: Viewport, width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: int = BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality: float = BridgeConfig.DEFAULT_SCREENSHOT_QUALITY) -> Dictionary:
+## Capture the raw viewport image (before resize/encode).
+## Returns the Image at full viewport resolution, or null on failure.
+static func capture_raw(viewport: Viewport) -> Image:
 	var image: Image = viewport.get_texture().get_image()
+	return image
+
+
+## Resize and encode an Image as a base64 JPEG result dictionary.
+static func encode(image: Image, width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: int = BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality: float = BridgeConfig.DEFAULT_SCREENSHOT_QUALITY) -> Dictionary:
 	if image == null:
-		return {"error": "Failed to capture viewport image"}
+		return {"error": "No image to encode"}
 
 	if width > 0 and height > 0:
 		image.resize(width, height, Image.INTERPOLATE_LANCZOS)
@@ -22,6 +28,15 @@ static func capture(viewport: Viewport, width: int = BridgeConfig.DEFAULT_SCREEN
 		"frame": Engine.get_frames_drawn(),
 		"timestamp": Time.get_ticks_msec() / 1000.0,
 	}
+
+
+## Capture the running game viewport and return as base64 JPEG.
+## Convenience wrapper that combines capture_raw + encode.
+static func capture(viewport: Viewport, width: int = BridgeConfig.DEFAULT_SCREENSHOT_WIDTH, height: int = BridgeConfig.DEFAULT_SCREENSHOT_HEIGHT, quality: float = BridgeConfig.DEFAULT_SCREENSHOT_QUALITY) -> Dictionary:
+	var image: Image = capture_raw(viewport)
+	if image == null:
+		return {"error": "Failed to capture viewport image"}
+	return encode(image, width, height, quality)
 
 
 ## Capture a region of the viewport around a specific node.
