@@ -155,14 +155,16 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     async def game_snapshot(
         root: str = "",
         depth: int = 12,
-        include_screenshot: bool = True,
+        include_screenshot: bool = False,
         quality: float = 0.75,
     ) -> list[Any]:
         """Get a structured scene tree snapshot from the running game with stable refs.
 
         This is your PRIMARY way to understand game state. Always call this before and
         after interactions. Returns structured data (node tree with refs, positions,
-        properties) plus a screenshot so you can see what the player sees.
+        properties). A screenshot is always captured and pushed to the editor's vision
+        panel for the developer to see. Set include_screenshot=True to also receive
+        the image in this response (costs extra tokens).
 
         Each node gets a short ref like "n1", "n5" — use these with game_click_node,
         game_state, etc. Refs are only valid until the next snapshot call.
@@ -170,16 +172,19 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         Args:
             root: Optional node path to start from instead of scene root (e.g., 'HUD').
             depth: Max tree depth to walk (default 12).
-            include_screenshot: Whether to include a screenshot (default True).
+            include_screenshot: Include screenshot in response (default False). The
+                screenshot is always sent to the editor vision panel regardless.
             quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
         """
         err = await _check_runtime()
         if err:
             return [err]
 
+        # Always request a screenshot so the editor vision panel stays updated,
+        # even when the AI doesn't need the image in its context.
         params: dict[str, str] = {
             "depth": str(depth),
-            "include_screenshot": "true" if include_screenshot else "false",
+            "include_screenshot": "true",
             "quality": str(quality),
         }
         if root:
@@ -199,9 +204,12 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         result: list[Any] = [summary, data]
 
+        # Always push to vision panel so the developer sees what the AI sees
         if screenshot_data:
-            result.append(_b64_image(screenshot_data))
             await _push_vision(screenshot_data, data)
+            # Only include in the MCP response if explicitly requested
+            if include_screenshot:
+                result.append(_b64_image(screenshot_data))
 
         return result
 
