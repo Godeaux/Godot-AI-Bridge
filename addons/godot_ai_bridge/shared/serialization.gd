@@ -167,7 +167,31 @@ static func deserialize_rect2(dict: Dictionary) -> Rect2:
 	return Rect2(float(pos[0]), float(pos[1]), float(s[0]), float(s[1]))
 
 
-## Attempt to deserialize a JSON value into the appropriate Godot type based on a property hint.
+## Deserialize a JSON array back to Vector4i.
+static func deserialize_vector4i(arr: Array) -> Vector4i:
+	return Vector4i(int(arr[0]), int(arr[1]), int(arr[2]), int(arr[3]))
+
+
+## Deserialize a JSON array back to Quaternion.
+static func deserialize_quaternion(arr: Array) -> Quaternion:
+	return Quaternion(float(arr[0]), float(arr[1]), float(arr[2]), float(arr[3]))
+
+
+## Deserialize a JSON dictionary back to Rect2i.
+static func deserialize_rect2i(dict: Dictionary) -> Rect2i:
+	var pos: Array = dict.get("position", [0, 0])
+	var s: Array = dict.get("size", [0, 0])
+	return Rect2i(int(pos[0]), int(pos[1]), int(s[0]), int(s[1]))
+
+
+## Deserialize a JSON dictionary back to AABB.
+static func deserialize_aabb(dict: Dictionary) -> AABB:
+	var pos: Array = dict.get("position", [0, 0, 0])
+	var s: Array = dict.get("size", [0, 0, 0])
+	return AABB(Vector3(float(pos[0]), float(pos[1]), float(pos[2])), Vector3(float(s[0]), float(s[1]), float(s[2])))
+
+
+## Attempt to deserialize a JSON value into the appropriate Godot type based on target_type.
 ## Used when setting node properties from JSON data.
 static func deserialize_property_value(value: Variant, target_type: int) -> Variant:
 	if value is Array:
@@ -182,9 +206,18 @@ static func deserialize_property_value(value: Variant, target_type: int) -> Vari
 				return deserialize_vector3i(value)
 			TYPE_VECTOR4:
 				return deserialize_vector4(value)
+			TYPE_VECTOR4I:
+				return deserialize_vector4i(value)
+			TYPE_QUATERNION:
+				return deserialize_quaternion(value)
 	if value is Dictionary:
-		if value.has("r"):
-			return deserialize_color(value)
-		if value.has("position") and value.has("size"):
-			return deserialize_rect2(value)
+		match target_type:
+			TYPE_COLOR:
+				return deserialize_color(value)
+			TYPE_RECT2:
+				return deserialize_rect2(value)
+			TYPE_RECT2I:
+				return deserialize_rect2i(value)
+			TYPE_AABB:
+				return deserialize_aabb(value)
 	return value

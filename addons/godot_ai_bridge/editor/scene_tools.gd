@@ -26,6 +26,20 @@ static func _walk_node(node: Node) -> Dictionary:
 		"path": str(node.get_path()),
 	}
 
+	# Include script path if one is attached
+	var script: Script = node.get_script() as Script
+	if script != null and script.resource_path != "":
+		data["script"] = script.resource_path
+
+	# Include persistent groups (skip internal groups starting with "_")
+	var groups: Array = []
+	for g: StringName in node.get_groups():
+		var gs: String = str(g)
+		if not gs.begins_with("_"):
+			groups.append(gs)
+	if groups.size() > 0:
+		data["groups"] = groups
+
 	var children: Array = []
 	for child: Node in node.get_children():
 		if not str(child.name).begins_with("@"):
@@ -198,6 +212,52 @@ static func reparent_node(node_path: String, new_parent_path: String, keep_globa
 	return {"ok": true, "new_path": str(root.get_path_to(node))}
 
 
+## Move a node to a specific position among its siblings.
+## position can be an absolute index, or the string "up"/"down" for relative moves.
+static func reorder_node(node_path: String, position: Variant) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if node == root:
+		return {"error": "Cannot reorder the root node"}
+
+	var parent: Node = node.get_parent()
+	if parent == null:
+		return {"error": "Node has no parent"}
+
+	var current_index: int = node.get_index()
+	var sibling_count: int = parent.get_child_count()
+	var target_index: int = -1
+
+	if position is String:
+		match position:
+			"up":
+				target_index = max(current_index - 1, 0)
+			"down":
+				target_index = min(current_index + 1, sibling_count - 1)
+			"first":
+				target_index = 0
+			"last":
+				target_index = sibling_count - 1
+			_:
+				return {"error": "Unknown position string: '%s' (expected 'up', 'down', 'first', 'last' or an integer)" % str(position)}
+	else:
+		target_index = int(position)
+		if target_index < 0 or target_index >= sibling_count:
+			return {"error": "Index %d out of range (parent has %d children)" % [target_index, sibling_count]}
+
+	if target_index == current_index:
+		return {"ok": true, "index": current_index, "note": "Already at requested position"}
+
+	parent.move_child(node, target_index)
+	return {"ok": true, "old_index": current_index, "new_index": node.get_index()}
+
+
 ## List all properties of a node in the currently edited scene.
 static func list_node_properties(node_path: String) -> Dictionary:
 	var root: Node = EditorInterface.get_edited_scene_root()
@@ -346,6 +406,143 @@ static func _create_node_by_type(type_name: String) -> Node:
 	if obj != null:
 		obj.free()
 	return null
+
+
+## List all signals on a node, including their current connections.
+static func list_signals(node_path: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	var signals: Array = []
+	for sig: Dictionary in node.get_signal_list():
+		var sig_name: String = sig["name"]
+		var connections: Array = []
+		for conn: Dictionary in node.get_signal_connection_list(sig_name):
+			connections.append({
+				"target": str(root.get_path_to(conn["callable"].get_object())),
+				"method": conn["callable"].get_method(),
+			})
+		var sig_info: Dictionary = {
+			"name": sig_name,
+			"args": [],
+			"connections": connections,
+		}
+		for arg: Dictionary in sig.get("args", []):
+			sig_info["args"].append({
+				"name": arg.get("name", ""),
+				"type": type_string(arg.get("type", TYPE_NIL)),
+			})
+		signals.append(sig_info)
+
+	return {
+		"node": str(node.name),
+		"type": node.get_class(),
+		"signals": signals,
+		"count": signals.size(),
+	}
+
+
+## Connect a signal from one node to a method on another node.
+static func connect_signal(source_path: String, signal_name: String, target_path: String, method_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var source: Node = root if source_path == "." or source_path == "" else root.get_node_or_null(source_path)
+	if source == null:
+		return {"error": "Source node not found: %s" % source_path}
+
+	var target: Node = root if target_path == "." or target_path == "" else root.get_node_or_null(target_path)
+	if target == null:
+		return {"error": "Target node not found: %s" % target_path}
+
+	if not source.has_signal(signal_name):
+		return {"error": "Signal '%s' does not exist on node '%s' (%s)" % [signal_name, source.name, source.get_class()]}
+
+	if source.is_connected(signal_name, Callable(target, method_name)):
+		return {"error": "Signal '%s' is already connected to '%s.%s'" % [signal_name, target_path, method_name]}
+
+	# CONNECT_PERSIST ensures the connection is saved into the .tscn file,
+	# matching the behavior of connections made through the editor GUI.
+	var err: Error = source.connect(signal_name, Callable(target, method_name), Object.CONNECT_PERSIST)
+	if err != OK:
+		return {"error": "Failed to connect signal: %s" % error_string(err)}
+
+	return {"ok": true}
+
+
+## Disconnect a signal between two nodes.
+static func disconnect_signal(source_path: String, signal_name: String, target_path: String, method_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var source: Node = root if source_path == "." or source_path == "" else root.get_node_or_null(source_path)
+	if source == null:
+		return {"error": "Source node not found: %s" % source_path}
+
+	var target: Node = root if target_path == "." or target_path == "" else root.get_node_or_null(target_path)
+	if target == null:
+		return {"error": "Target node not found: %s" % target_path}
+
+	if not source.has_signal(signal_name):
+		return {"error": "Signal '%s' does not exist on node '%s' (%s)" % [signal_name, source.name, source.get_class()]}
+
+	var callable: Callable = Callable(target, method_name)
+	if not source.is_connected(signal_name, callable):
+		return {"error": "Signal '%s' is not connected to '%s.%s'" % [signal_name, target_path, method_name]}
+
+	source.disconnect(signal_name, callable)
+	return {"ok": true}
+
+
+## Add a node to a group.
+static func add_to_group(node_path: String, group_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if node.is_in_group(group_name):
+		return {"error": "Node '%s' is already in group '%s'" % [node.name, group_name]}
+
+	node.add_to_group(group_name, true)
+	return {"ok": true, "groups": _get_node_groups(node)}
+
+
+## Remove a node from a group.
+static func remove_from_group(node_path: String, group_name: String) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if not node.is_in_group(group_name):
+		return {"error": "Node '%s' is not in group '%s'" % [node.name, group_name]}
+
+	node.remove_from_group(group_name)
+	return {"ok": true, "groups": _get_node_groups(node)}
+
+
+## Get all persistent groups for a node (excluding internal groups).
+static func _get_node_groups(node: Node) -> Array:
+	var groups: Array = []
+	for g: StringName in node.get_groups():
+		var gs: String = str(g)
+		if not gs.begins_with("_"):
+			groups.append(gs)
+	return groups
 
 
 ## Set a property on a node, handling type deserialization.

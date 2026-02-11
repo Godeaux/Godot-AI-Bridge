@@ -3,8 +3,7 @@ class_name BridgeConfig
 
 const EDITOR_PORT: int = 9899
 const RUNTIME_PORT: int = 9900
-const EDITOR_HOST: String = "127.0.0.1"
-const RUNTIME_HOST: String = "127.0.0.1"
+const LISTEN_HOST: String = "127.0.0.1"
 const MAX_SNAPSHOT_DEPTH: int = 12
 const DEFAULT_SCREENSHOT_WIDTH: int = 640
 const DEFAULT_SCREENSHOT_HEIGHT: int = 360

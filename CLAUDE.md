@@ -28,21 +28,24 @@ Every decision you make should come from what you see in the screenshot and read
 
 ### Editor Tools (`godot_*`) — always available when Godot editor is open
 Edit scenes, scripts, and project files. Control the Godot Editor itself.
-- **Scene/node operations**: add, remove, rename, duplicate, reparent, instance scenes, find nodes by name/type/group
-- **Properties**: get, set, list all editable properties with type info
-- **Scripts**: read, write, create from template, check for errors, read debugger output
-- **Project**: browse structure, search files, read settings, input map, autoloads
-- **Run control**: start/stop the game
-- **Editor screenshots**: capture the viewport (2D/3D canvas) or full editor window (with all docks)
+- **Scene/node operations**: `godot_get_scene_tree`, `godot_create_scene`, `godot_open_scene`, `godot_save_scene`, `godot_add_node`, `godot_remove_node`, `godot_rename_node`, `godot_duplicate_node`, `godot_reparent_node`, `godot_instance_scene`, `godot_find_nodes`
+- **Properties**: `godot_get_property`, `godot_set_property`, `godot_list_node_properties`
+- **Signals**: `godot_list_signals`, `godot_connect_signal`, `godot_disconnect_signal`
+- **Groups**: `godot_add_to_group`, `godot_remove_from_group`
+- **Scripts**: `godot_read_script`, `godot_write_script`, `godot_create_script`, `godot_get_errors`, `godot_get_debugger_output`
+- **Project**: `godot_project_structure`, `godot_search_files`, `godot_get_project_settings`, `godot_get_input_map`, `godot_get_autoloads`
+- **Input map editing**: `godot_add_input_action`, `godot_remove_input_action`, `godot_add_input_binding`, `godot_remove_input_binding`
+- **Run control**: `godot_run_game`, `godot_stop_game`, `godot_is_game_running`
+- **Editor screenshots**: `godot_editor_screenshot` — capture the viewport (2D/3D canvas) or full editor window (with all docks)
 
 ### Runtime Tools (`game_*`) — only when game is running
-Interact with the actual running game. Take snapshots, inject input, read state.
-- **Observation**: snapshots (node tree + screenshot), standalone screenshots, node-cropped screenshots
-- **Input**: click, click node, key press, action trigger, mouse move, multi-step sequences
-- **State**: detailed node inspection, method calls
-- **Waiting**: wait N seconds, wait for conditions (property equals, node exists, signal)
-- **Control**: pause/resume, time scale
-- **Diagnostics**: console output, snapshot diffs, scene change history
+Interact with the actual running game. Take snapshots, inject input, read and modify state.
+- **Observation**: `game_snapshot` (node tree + screenshot), `game_screenshot`, `game_screenshot_node`
+- **Input**: `game_click`, `game_click_node`, `game_press_key`, `game_trigger_action`, `game_mouse_move`, `game_input_sequence`
+- **State**: `game_state` (deep node inspection), `game_set_property` (modify values at runtime), `game_call_method`
+- **Waiting**: `game_wait` (wait N seconds), `game_wait_for` (wait for conditions: property equals, node exists, signal)
+- **Control**: `game_pause`, `game_set_timescale`
+- **Diagnostics**: `game_console_output`, `game_snapshot_diff`, `game_scene_history`, `game_list_actions`
 
 ## Core Workflow
 
@@ -71,6 +74,7 @@ The key insight: **you are looking at a screenshot of a real game and deciding w
 ## Key Principles
 
 - **Always snapshot before and after interactions.** This gives you both structured data and a screenshot each time.
+- **Keep snapshots lean.** Your first snapshot can be full (`depth=12`), but follow-ups should be targeted: `game_snapshot(root='Player', depth=3)` to focus on a subtree, `game_snapshot_diff()` to see only what changed, or `game_state(ref='n5')` to inspect one node. Full-tree snapshots of large scenes are expensive — save them for initial orientation or scene transitions.
 - **Use refs from snapshots to click nodes**, not raw coordinates. Refs like "n5" are more reliable.
 - **If a ref fails, re-snapshot.** Refs go stale when the scene tree changes.
 - **Use `game_wait` after actions** to let animations/physics play out before checking results.
@@ -84,11 +88,15 @@ The key insight: **you are looking at a screenshot of a real game and deciding w
 - **Use `godot_editor_screenshot`** to see the editor state — use `mode="viewport"` for the 2D/3D canvas, `mode="full"` for the entire editor window with all docks and inspector.
 - **Use `godot_find_nodes`** to search the scene tree by name, type, or group instead of manually walking the tree.
 - **Use `godot_instance_scene`** to add .tscn files as children — this is how you compose scenes (add a player.tscn to a level, enemy.tscn instances, UI components, etc.).
+- **Use `game_set_property`** to tweak values at runtime without stopping the game — adjust speed, health, position, etc. like using the Inspector during play.
+- **Use `godot_connect_signal`** to wire up signal connections — e.g., connect a button's `pressed` signal to a handler method.
+- **Use `godot_add_input_action` + `godot_add_input_binding`** to set up input mappings — create actions and bind keys/buttons to them.
+- **Use `godot_add_to_group`** to tag nodes for easy lookup — then find them with `godot_find_nodes(group="enemies")`.
 
 ## Reading Snapshots
 
 Each node in a snapshot has:
-- `ref` — short reference like "n1", use with click_node, state, etc.
+- `ref` — short reference like "n1", use with click_node, state, set_property, etc.
 - `type` — Godot class name (CharacterBody2D, Button, Label, etc.)
 - `position` / `global_position` — where it is in the scene
 - `visible` — whether it's actually visible in the tree
@@ -107,6 +115,50 @@ Use `godot_editor_screenshot` to visually verify your edits without running the 
 ```
 
 Use `mode="viewport"` most of the time (node placement, visual layout). Use `mode="full"` when you need to see the inspector panel, scene tree dock, or other editor UI.
+
+## Advanced: Runtime Property Tweaking
+
+Modify values on the fly without stopping the game — like using the Inspector during play:
+
+```
+1. game_snapshot()                               →  See current state
+2. game_state(ref="n3")                          →  Check player's properties (speed=200, health=100)
+3. game_set_property(ref="n3", property="speed", value=500)   →  Double the speed
+4. game_snapshot()                               →  See the effect immediately
+5. game_set_property(ref="n3", property="position", value=[400, 100])  →  Teleport the player
+```
+
+This is especially useful for:
+- Balancing gameplay (adjust speed, damage, jump height)
+- Testing edge cases (set health to 1, position near boundary)
+- Debugging (move player to a specific location, change visibility)
+
+## Advanced: Signal Connections
+
+Wire up signals between nodes in the editor:
+
+```
+1. godot_list_signals(path="UI/StartButton")      →  See available signals (pressed, toggled, etc.)
+2. godot_connect_signal(
+       source="UI/StartButton",
+       signal_name="pressed",
+       target=".",
+       method="_on_start_pressed"
+   )                                               →  Connect button press to root's handler
+3. godot_list_signals(path="UI/StartButton")      →  Verify the connection was made
+```
+
+## Advanced: Input Map Management
+
+Create and configure input actions for the project:
+
+```
+1. godot_get_input_map()                          →  See current actions and bindings
+2. godot_add_input_action("jump")                 →  Create a new action
+3. godot_add_input_binding("jump", "key", "Space")  →  Bind Space key
+4. godot_add_input_binding("jump", "joypad_button", "0")  →  Also bind joypad A button
+5. godot_get_input_map()                          →  Verify the bindings
+```
 
 ## Advanced: Pause-and-Inspect Debugging
 
@@ -154,6 +206,7 @@ Use `godot_instance_scene` and `godot_find_nodes` to build complex scenes:
 3. godot_find_nodes(type="CharacterBody2D")                        →  Find all character bodies
 4. godot_find_nodes(name="Enemy*", group="enemies")                →  Find enemies by name + group
 5. godot_rename_node("Enemies/Enemy", "Goblin")                    →  Rename for clarity
+6. godot_add_to_group("Enemies/Goblin", "enemies")                →  Tag it for group lookup
 ```
 
 ## Example: Playing a Platformer
@@ -234,4 +287,26 @@ Use `godot_instance_scene` and `godot_find_nodes` to build complex scenes:
 6. godot_find_nodes(type="StaticBody2D")  →  Verify the ground node exists
 7. godot_editor_screenshot(mode="viewport")  →  Check the visual layout
 8. godot_save_scene()
+```
+
+## Example: Runtime Balancing
+
+```
+1. godot_run_game()
+2. game_snapshot()
+   → Player moves too slowly, enemies are too fast.
+
+3. game_state(ref="n3")
+   → Player has speed=200, jump_force=400
+
+4. game_set_property(ref="n3", property="speed", value=350)
+5. game_set_property(ref="n3", property="jump_force", value=600)
+   → Tweaked values without restarting
+
+6. game_snapshot()
+   → Player feels much better now. Update the script with these values.
+
+7. godot_stop_game()
+8. godot_read_script("res://scripts/player.gd")
+9. godot_write_script("res://scripts/player.gd", "...")  — update the defaults
 ```

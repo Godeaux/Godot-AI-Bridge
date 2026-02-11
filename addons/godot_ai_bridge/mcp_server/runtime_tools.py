@@ -11,24 +11,125 @@ import time
 from typing import Any
 
 from fastmcp import FastMCP
-from client import runtime
-
-
-def _b64_image(b64_data: str) -> dict[str, str]:
-    """Return a base64 JPEG as an MCP image content block dict.
-
-    FastMCP 2.14.5 can't serialize Image objects inside list[Any] returns,
-    so we return the MCP-protocol image content block directly.
-    """
-    return {"type": "image", "data": b64_data, "mimeType": "image/jpeg"}
+from client import editor, runtime
+from utils import b64_image as _b64_image, is_error_line as _is_error_line
 
 
 GAME_NOT_RUNNING_MSG = "Game is not running. Use godot_run_game() to start it first."
 
+
+async def _push_vision(image_b64: str, snapshot_data: dict[str, Any] | None = None) -> None:
+    """Push a game screenshot to the editor bridge for live display in the activity panel.
+
+    This is fire-and-forget — if the editor bridge is unreachable, we silently skip.
+    """
+    try:
+        body: dict[str, Any] = {"image": image_b64}
+        if snapshot_data:
+            # Parse viewport_size from snapshot data (comes as [w, h] array)
+            vp_size = snapshot_data.get("viewport_size", [0, 0])
+            vp_w = vp_size[0] if isinstance(vp_size, (list, tuple)) and len(vp_size) >= 2 else 0
+            vp_h = vp_size[1] if isinstance(vp_size, (list, tuple)) and len(vp_size) >= 2 else 0
+            body["summary"] = {
+                "scene": snapshot_data.get("scene_name", ""),
+                "node_count": _count_nodes(snapshot_data.get("nodes", [])),
+                "fps": snapshot_data.get("fps", "?"),
+                "paused": snapshot_data.get("paused", False),
+                "frame": snapshot_data.get("frame", "?"),
+                "viewport_w": vp_w,
+                "viewport_h": vp_h,
+            }
+        await editor.post("/agent/vision", body, timeout=2.0)
+    except Exception:
+        pass  # Non-critical — don't break the tool if the editor is busy
+
+
+async def _fetch_director_notes() -> list[dict[str, Any]]:
+    """Fetch pending developer director directives from the editor bridge.
+
+    Returns the list of directives, or empty list if none/unreachable.
+    """
+    try:
+        data = await editor.get("/agent/director", timeout=2.0)
+        return data.get("directives", [])
+    except Exception:
+        return []
+
+
+def _format_director_notes(directives: list[dict[str, Any]]) -> str:
+    """Format director directives into a text block for the agent."""
+    lines = [
+        "DEVELOPER DIRECTOR NOTE (from the human watching in the Godot editor):",
+        "",
+    ]
+    for directive in directives:
+        text = directive.get("text", "")
+        markers = directive.get("markers", [])
+        if text:
+            lines.append(f"  Message: {text}")
+        if markers:
+            for m in markers:
+                lines.append(f"  Marker #{m['id']} at game position ({m['x']:.0f}, {m['y']:.0f})")
+    lines.append("")
+    lines.append("You MUST acknowledge and act on these director notes. They represent")
+    lines.append("real-time guidance from the developer who is watching your work.")
+    return "\n".join(lines)
+
+
 # Cache runtime availability to avoid a full HTTP round-trip on every tool call.
 # After a successful check, we trust the runtime is up for a short window.
 _runtime_cache: dict[str, float] = {"last_ok": 0.0}
-_CACHE_TTL = 5.0  # seconds
+_CACHE_TTL = 2.0  # seconds
+
+
+async def _get_crash_diagnostics() -> str:
+    """Fetch debugger/console output from the editor to diagnose a game crash.
+
+    Called when the runtime bridge was previously reachable but is now gone.
+    The editor bridge (port 9899) stays alive even when the game dies, so we
+    can pull the last log output to tell the agent what went wrong.
+    """
+    error_lines: list[str] = []
+    try:
+        log = await editor.get("/debugger/output")
+        output = log.get("output", "")
+        if output:
+            for line in output.split("\n"):
+                if line.strip() and _is_error_line(line):
+                    error_lines.append(line.strip())
+    except Exception:
+        pass  # Editor may be unreachable too — best effort
+
+    repair_steps = (
+        "\n\nYou MUST attempt to fix this. Follow these steps:\n"
+        "  1. Call godot_get_debugger_output() for full error context.\n"
+        "  2. Read the broken script(s) with godot_read_script().\n"
+        "  3. Fix the code with godot_write_script().\n"
+        "  4. Call godot_stop_game(), then godot_save_scene().\n"
+        "  5. Relaunch with godot_run_game(strict=true).\n"
+        "Do NOT stop here — diagnose and fix the error."
+    )
+
+    if not error_lines:
+        return (
+            "Game crashed or was stopped — no error details found in the log."
+            + repair_steps
+        )
+
+    # Deduplicate while preserving order, keep last 10
+    seen: set[str] = set()
+    unique: list[str] = []
+    for line in error_lines:
+        if line not in seen:
+            seen.add(line)
+            unique.append(line)
+    unique = unique[-10:]
+
+    return (
+        "Game crashed or was stopped unexpectedly. Errors found in log:\n\n"
+        + "\n".join(f"  {line}" for line in unique)
+        + repair_steps
+    )
 
 
 async def _check_runtime() -> str | None:
@@ -37,11 +138,19 @@ async def _check_runtime() -> str | None:
     Uses a short TTL cache: after a successful check, skip re-checking for a
     few seconds. This eliminates the double-request overhead on rapid tool
     sequences while still detecting a stopped game within seconds.
+
+    When the game was previously running but is now gone, fetches crash
+    diagnostics from the editor bridge so the agent knows *why* it died.
     """
     now = time.monotonic()
     if now - _runtime_cache["last_ok"] < _CACHE_TTL:
         return None
     if not await runtime.is_available():
+        was_previously_running = _runtime_cache["last_ok"] > 0
+        # Invalidate cache so subsequent calls don't wait for TTL
+        _runtime_cache["last_ok"] = 0.0
+        if was_previously_running:
+            return await _get_crash_diagnostics()
         return GAME_NOT_RUNNING_MSG
     _runtime_cache["last_ok"] = now
     return None
@@ -65,6 +174,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         root: str = "",
         depth: int = 12,
         include_screenshot: bool = False,
+        annotate: bool = True,
         quality: float = 0.75,
     ) -> list[Any]:
         """Get a structured scene tree snapshot from the running game with stable refs.
@@ -76,10 +186,24 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         Each node gets a short ref like "n1", "n5" — use these with game_click_node,
         game_state, etc. Refs are only valid until the next snapshot call.
 
+        When include_screenshot=True, the screenshot shows ref labels (n1, n5, etc.)
+        drawn directly on the image next to each visible node, with bounding boxes
+        around UI elements. This makes it easy to see which ref corresponds to which
+        on-screen element. Set annotate=False to get a clean screenshot without labels.
+
+        IMPORTANT — Keep snapshots lean to conserve context:
+        - Use root to focus on a subtree: root='Player' or root='HUD'
+        - Use depth=3 or depth=4 instead of the full tree when you only need nearby nodes
+        - Use game_snapshot_diff() after actions to see only what changed
+        - Use game_state(ref='n5') to deep-inspect one node instead of snapshotting everything
+        - First snapshot can be full (depth=12). Follow-ups should be targeted.
+
         Args:
-            root: Optional node path to start from instead of scene root (e.g., 'HUD').
-            depth: Max tree depth to walk (default 12).
+            root: Node path to snapshot from (e.g., 'Player', 'HUD'). Empty = full scene.
+            depth: Max tree depth (default 12). Use 3-4 for focused snapshots.
             include_screenshot: Whether to include a screenshot (default False).
+            annotate: Draw ref labels on screenshot (default True). Only applies when
+                include_screenshot=True.
             quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
         """
         err = await _check_runtime()
@@ -89,6 +213,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         params: dict[str, str] = {
             "depth": str(depth),
             "include_screenshot": "true" if include_screenshot else "false",
+            "annotate": "true" if (annotate and include_screenshot) else "false",
             "quality": str(quality),
         }
         if root:
@@ -110,38 +235,74 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         if screenshot_data:
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data)
+
+        # Check for developer director notes
+        director_notes = await _fetch_director_notes()
+        if director_notes:
+            result.insert(0, _format_director_notes(director_notes))
 
         return result
 
     # --- Screenshots ---
 
     @mcp.tool
-    async def game_screenshot(width: int = 640, height: int = 360, quality: float = 0.75) -> list[Any]:
+    async def game_screenshot(
+        width: int = 640,
+        height: int = 360,
+        quality: float = 0.75,
+        annotate: bool = True,
+    ) -> list[Any]:
         """Capture the running game viewport as a screenshot.
 
         Use game_snapshot for structured data. Call this when you only need the image,
         or need a custom resolution.
 
+        By default, the screenshot includes ref labels (n1, n5, etc.) drawn next to
+        visible nodes, matching the refs from the latest snapshot. Set annotate=False
+        for a clean image without annotations.
+
         Args:
             width: Screenshot width in pixels (default 640).
             height: Screenshot height in pixels (default 360).
             quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
+            annotate: Draw ref labels on the screenshot (default True).
         """
         err = await _check_runtime()
         if err:
             return [err]
 
-        data = await runtime.get("/screenshot", {"width": str(width), "height": str(height), "quality": str(quality)})
+        data = await runtime.get("/screenshot", {
+            "width": str(width),
+            "height": str(height),
+            "quality": str(quality),
+            "annotate": "true" if annotate else "false",
+        })
         if "error" in data:
             return [str(data["error"])]
 
-        return [
+        image_data = data["image"]
+        await _push_vision(image_data)
+        result: list[Any] = [
             f"Game screenshot ({data['size'][0]}x{data['size'][1]}, frame {data.get('frame', '?')})",
-            _b64_image(data["image"]),
+            _b64_image(image_data),
         ]
 
+        # Check for developer director notes
+        director_notes = await _fetch_director_notes()
+        if director_notes:
+            result.insert(0, _format_director_notes(director_notes))
+
+        return result
+
     @mcp.tool
-    async def game_screenshot_node(ref: str = "", path: str = "") -> list[Any]:
+    async def game_screenshot_node(
+        ref: str = "",
+        path: str = "",
+        width: int = 640,
+        height: int = 360,
+        quality: float = 0.75,
+    ) -> list[Any]:
         """Capture a cropped screenshot of a specific node's region.
 
         Useful for inspecting UI elements up close — zoom into a button, panel,
@@ -150,12 +311,19 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         Args:
             ref: Node ref from latest snapshot (e.g., 'n5'). Preferred over path.
             path: Node path as alternative to ref (e.g., 'HUD/ScoreLabel').
+            width: Screenshot width in pixels (default 640).
+            height: Screenshot height in pixels (default 360).
+            quality: JPEG quality 0.0–1.0 (default 0.75).
         """
         err = await _check_runtime()
         if err:
             return [err]
 
-        params: dict[str, str] = {}
+        params: dict[str, str] = {
+            "width": str(width),
+            "height": str(height),
+            "quality": str(quality),
+        }
         if ref:
             params["ref"] = ref
         if path:
@@ -173,7 +341,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     # --- Input ---
 
     @mcp.tool
-    async def game_click(x: float, y: float, button: str = "left") -> dict[str, Any]:
+    async def game_click(x: float, y: float, button: str = "left", double: bool = False) -> dict[str, Any]:
         """Click at specific screen coordinates in the running game.
 
         Prefer game_click_node when targeting a specific node — it handles coordinate
@@ -183,13 +351,19 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             x: X coordinate in screen space.
             y: Y coordinate in screen space.
             button: Mouse button — 'left', 'right', or 'middle'.
+            double: If True, send a double-click instead of a single click.
         """
         err = await _check_runtime()
         if err:
             return {"error": err}
 
-        result = await runtime.post("/click", {"x": x, "y": y, "button": button})
-        result["_description"] = f"🖱️ Clicked {button} at ({x:.0f}, {y:.0f})"
+        body: dict[str, Any] = {"x": x, "y": y, "button": button}
+        if double:
+            body["double"] = True
+        result = await runtime.post("/click", body)
+        if "_description" not in result:
+            click_type = "Double-clicked" if double else "Clicked"
+            result["_description"] = f"🖱️ {click_type} {button} at ({x:.0f}, {y:.0f})"
         return result
 
     @mcp.tool
@@ -213,8 +387,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if path:
             body["path"] = path
         result = await runtime.post("/click_node", body)
-        target = ref or path
-        result["_description"] = f"🖱️ Clicked node '{target}'"
+        if "_description" not in result:
+            target = ref or path
+            result["_description"] = f"🖱️ Clicked node '{target}'"
         return result
 
     @mcp.tool
@@ -238,12 +413,13 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/key", {"key": key, "action": action, "duration": duration})
-        if action == "hold" and duration > 0:
-            result["_description"] = f"⌨️ Held '{key}' for {duration}s"
-        elif action == "tap":
-            result["_description"] = f"⌨️ Tapped '{key}'"
-        else:
-            result["_description"] = f"⌨️ Key '{key}' {action}"
+        if "_description" not in result:
+            if action == "hold" and duration > 0:
+                result["_description"] = f"⌨️ Held '{key}' for {duration}s"
+            elif action == "tap":
+                result["_description"] = f"⌨️ Tapped '{key}'"
+            else:
+                result["_description"] = f"⌨️ Key '{key}' {action}"
         return result
 
     @mcp.tool
@@ -267,24 +443,38 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/action", {"action": action, "pressed": pressed, "strength": strength})
-        state = "pressed" if pressed else "released"
-        result["_description"] = f"🎮 Action '{action}' {state}"
+        if "_description" not in result:
+            state = "pressed" if pressed else "released"
+            result["_description"] = f"🎮 Action '{action}' {state}"
         return result
 
     @mcp.tool
-    async def game_mouse_move(x: float, y: float) -> dict[str, Any]:
+    async def game_mouse_move(
+        x: float,
+        y: float,
+        relative_x: float = 0.0,
+        relative_y: float = 0.0,
+    ) -> dict[str, Any]:
         """Move the mouse to a position in the running game.
 
         Args:
-            x: Target X coordinate.
-            y: Target Y coordinate.
+            x: Target X coordinate (absolute position).
+            y: Target Y coordinate (absolute position).
+            relative_x: Relative X motion (for FPS-style mouse look). Added on top of absolute position.
+            relative_y: Relative Y motion (for FPS-style mouse look). Added on top of absolute position.
         """
         err = await _check_runtime()
         if err:
             return {"error": err}
 
-        result = await runtime.post("/mouse_move", {"x": x, "y": y})
-        result["_description"] = f"🖱️ Mouse moved to ({x:.0f}, {y:.0f})"
+        body: dict[str, Any] = {"x": x, "y": y}
+        if relative_x != 0.0:
+            body["relative_x"] = relative_x
+        if relative_y != 0.0:
+            body["relative_y"] = relative_y
+        result = await runtime.post("/mouse_move", body)
+        if "_description" not in result:
+            result["_description"] = f"🖱️ Mouse moved to ({x:.0f}, {y:.0f})"
         return result
 
     @mcp.tool
@@ -336,6 +526,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         result: list[Any] = [summary, data]
         if screenshot_data:
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data)
         return result
 
     # --- State ---
@@ -367,7 +558,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if path:
             params["path"] = path
         result = await runtime.get("/state", params)
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             target = ref or path
             node_type = result.get("type", "?")
             result["_description"] = f"🔍 State of '{target}' ({node_type})"
@@ -399,11 +590,50 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             body["ref"] = ref
         if path:
             body["path"] = path
-        if args:
+        if args is not None:
             body["args"] = args
         result = await runtime.post("/call_method", body)
-        target = ref or path
-        result["_description"] = f"📞 Called '{target}'.{method}()"
+        if "_description" not in result:
+            target = ref or path
+            result["_description"] = f"📞 Called '{target}'.{method}()"
+        return result
+
+    @mcp.tool
+    async def game_set_property(
+        property: str,
+        value: Any,
+        ref: str = "",
+        path: str = "",
+    ) -> dict[str, Any]:
+        """Set a property on a node in the running game.
+
+        Directly modifies a node's property at runtime — like tweaking values
+        in the Inspector while the game is running. Use this to adjust exported
+        variables (speed, health, gravity, etc.) without stopping the game.
+
+        Use game_state() first to see what properties a node has and their
+        current values.
+
+        Args:
+            property: Property name to set (e.g., 'speed', 'health', 'position', 'modulate').
+            value: Value to set. Use arrays for vectors: [100, 200] for Vector2.
+                   Use dicts for colors: {"r": 1, "g": 0, "b": 0, "a": 1}.
+            ref: Node ref from latest snapshot. Preferred.
+            path: Node path as alternative.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        body: dict[str, Any] = {"property": property, "value": value}
+        if ref:
+            body["ref"] = ref
+        if path:
+            body["path"] = path
+        result = await runtime.post("/set_property", body)
+        if "ok" in result and "_description" not in result:
+            target = ref or path
+            result["_description"] = f"✏️ Set '{target}'.{property}"
         return result
 
     # --- Waiting ---
@@ -444,6 +674,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         result: list[Any] = [summary, data]
         if screenshot_data and isinstance(screenshot_data, str):
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data)
         return result
 
     @mcp.tool
@@ -453,6 +684,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         path: str = "",
         property: str = "",
         value: Any = None,
+        signal_name: str = "",
         timeout: float = 10.0,
         poll_interval: float = 0.1,
         snapshot: bool = True,
@@ -474,6 +706,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             path: Node path as alternative.
             property: Property name (for property conditions).
             value: Target value (for property conditions).
+            signal_name: Signal name to wait for (only for condition='signal').
             timeout: Max seconds to wait before giving up (default 10).
             poll_interval: How often to check the condition (default 0.1s).
             snapshot: Take snapshot after condition met (default True).
@@ -498,6 +731,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             body["property"] = property
         if value is not None:
             body["value"] = value
+        if signal_name:
+            body["signal"] = signal_name
 
         http_timeout = timeout + 15.0
         data = await runtime.post("/wait_for", body, timeout=http_timeout)
@@ -519,6 +754,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         result: list[Any] = [summary, data]
         if screenshot_data and isinstance(screenshot_data, str):
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data.get("snapshot") if isinstance(data.get("snapshot"), dict) else data)
         return result
 
     # --- Game Control ---
@@ -542,8 +778,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/pause", {"paused": paused})
-        state = "⏸️ Game PAUSED" if paused else "▶️ Game RESUMED"
-        result["_description"] = state
+        if "_description" not in result:
+            state = "⏸️ Game PAUSED" if paused else "▶️ Game RESUMED"
+            result["_description"] = state
         return result
 
     @mcp.tool
@@ -568,7 +805,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.post("/timescale", {"scale": scale})
-        result["_description"] = f"⏩ Time scale set to {scale}x"
+        if "_description" not in result:
+            result["_description"] = f"⏩ Time scale set to {scale}x"
         return result
 
     # --- Console & Diagnostics ---
@@ -588,8 +826,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/console")
-        lines = len(result.get("output", "").split("\n")) if result.get("output") else 0
-        result["_description"] = f"📟 Console output ({lines} lines)"
+        if "_description" not in result:
+            lines = len(result.get("output", "").split("\n")) if result.get("output") else 0
+            result["_description"] = f"📟 Console output ({lines} lines)"
         return result
 
     # --- Snapshot Diff ---
@@ -616,10 +855,11 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/snapshot/diff", {"depth": str(depth)})
-        if "error" not in result:
-            added = len(result.get("added", []))
-            removed = len(result.get("removed", []))
-            changed = len(result.get("changed", []))
+        if "error" not in result and "_description" not in result:
+            diff = result.get("diff", {})
+            added = len(diff.get("nodes_added", []))
+            removed = len(diff.get("nodes_removed", []))
+            changed = len(diff.get("nodes_changed", {}))
             result["_description"] = f"📊 Snapshot diff — {added} added, {removed} removed, {changed} changed"
         return result
 
@@ -638,8 +878,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/scene_history")
-        if "error" not in result:
-            count = len(result.get("history", []))
+        if "error" not in result and "_description" not in result:
+            count = len(result.get("events", []))
             result["_description"] = f"📜 Scene history — {count} event(s)"
         return result
 
@@ -657,8 +897,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/info")
-        scene = result.get("current_scene", "?")
-        result["_description"] = f"ℹ️ Game info — scene '{scene}'"
+        if "_description" not in result:
+            scene = result.get("current_scene", "?")
+            result["_description"] = f"ℹ️ Game info — scene '{scene}'"
         return result
 
     @mcp.tool
@@ -672,7 +913,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             return {"error": err}
 
         result = await runtime.get("/actions")
-        if "error" not in result:
+        if "error" not in result and "_description" not in result:
             count = len(result.get("actions", {}))
             result["_description"] = f"🎮 {count} input action(s) available"
         return result
