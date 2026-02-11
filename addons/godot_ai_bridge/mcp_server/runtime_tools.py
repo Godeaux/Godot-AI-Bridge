@@ -167,9 +167,16 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         Each node gets a short ref like "n1", "n5" — use these with game_click_node,
         game_state, etc. Refs are only valid until the next snapshot call.
 
+        IMPORTANT — Keep snapshots lean to conserve context:
+        - Use root to focus on a subtree: root='Player' or root='HUD'
+        - Use depth=3 or depth=4 instead of the full tree when you only need nearby nodes
+        - Use game_snapshot_diff() after actions to see only what changed
+        - Use game_state(ref='n5') to deep-inspect one node instead of snapshotting everything
+        - First snapshot can be full (depth=12). Follow-ups should be targeted.
+
         Args:
-            root: Optional node path to start from instead of scene root (e.g., 'HUD').
-            depth: Max tree depth to walk (default 12).
+            root: Node path to snapshot from (e.g., 'Player', 'HUD'). Empty = full scene.
+            depth: Max tree depth (default 12). Use 3-4 for focused snapshots.
             include_screenshot: Whether to include a screenshot (default False).
             quality: JPEG quality 0.0–1.0 (default 0.75). Lower = smaller response.
         """

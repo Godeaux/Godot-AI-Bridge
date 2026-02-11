@@ -74,6 +74,7 @@ The key insight: **you are looking at a screenshot of a real game and deciding w
 ## Key Principles
 
 - **Always snapshot before and after interactions.** This gives you both structured data and a screenshot each time.
+- **Keep snapshots lean.** Your first snapshot can be full (`depth=12`), but follow-ups should be targeted: `game_snapshot(root='Player', depth=3)` to focus on a subtree, `game_snapshot_diff()` to see only what changed, or `game_state(ref='n5')` to inspect one node. Full-tree snapshots of large scenes are expensive — save them for initial orientation or scene transitions.
 - **Use refs from snapshots to click nodes**, not raw coordinates. Refs like "n5" are more reliable.
 - **If a ref fails, re-snapshot.** Refs go stale when the scene tree changes.
 - **Use `game_wait` after actions** to let animations/physics play out before checking results.
