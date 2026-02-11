@@ -10,6 +10,12 @@ const _ScriptTools := preload("res://addons/godot_ai_bridge/editor/script_tools.
 const _ProjectTools := preload("res://addons/godot_ai_bridge/editor/project_tools.gd")
 const _EditorScreenshot := preload("res://addons/godot_ai_bridge/editor/editor_screenshot.gd")
 
+# Reference to the EditorBridge so route handlers can access the activity panel.
+var _bridge_ref: Node = null
+
+func set_bridge(bridge: Node) -> void:
+	_bridge_ref = bridge
+
 
 # --- Scene & Node Operations ---
 
@@ -554,6 +560,30 @@ func handle_is_running(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var running: bool = EditorInterface.is_playing_scene()
 	var desc: String = "🟢 Game is running" if running else "⚫ Game is not running"
 	return {"running": running, "_description": desc}
+
+
+# --- Agent Vision ---
+
+## POST /agent/vision — Receive a game screenshot to display in the activity panel.
+func handle_agent_vision(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var image: String = str(body.get("image", ""))
+	var summary: Dictionary = body.get("summary", {})
+
+	if image == "":
+		return {"error": "Must provide 'image' (base64-encoded screenshot)"}
+
+	# Forward to the activity panel
+	var bridge: Node = get_bridge()
+	if bridge and bridge.activity_panel != null and bridge.activity_panel.has_method("update_vision"):
+		bridge.activity_panel.update_vision(image, summary)
+
+	return {"ok": true, "_description": "👁️ Agent vision updated"}
+
+
+## Get a reference to the parent EditorBridge node.
+func get_bridge() -> Node:
+	return _bridge_ref
 
 
 # --- Editor Screenshot ---

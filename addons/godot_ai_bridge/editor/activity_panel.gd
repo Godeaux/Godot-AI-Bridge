@@ -1,24 +1,33 @@
 ## Activity panel for the Godot AI Bridge.
 ## Shows setup instructions for new users, then transitions to a live
-## activity log once the AI client connects.
+## agent vision dashboard with screenshot preview and activity feed.
 @tool
 class_name AIBridgeActivityPanel
 extends Control
 
+# --- UI references ---
 var _main_vbox: VBoxContainer
 var _header_bar: HBoxContainer
 var _status_label: Label
 var _clear_button: Button
 var _copy_config_button: Button
-var _log_display: RichTextLabel
 var _setup_display: RichTextLabel
 
+# Split layout (visible after first request)
+var _split_container: HSplitContainer
+var _vision_panel: VBoxContainer
+var _screenshot_rect: TextureRect
+var _node_info_label: RichTextLabel
+var _log_display: RichTextLabel
+
+# --- State ---
 var _log_entries: Array[String] = []
 var _has_received_request: bool = false
 var _request_count: int = 0
 var _mcp_server_path: String = ""
 
 const MAX_LOG_ENTRIES: int = 200
+const VISION_PANEL_WIDTH: int = 340
 
 
 func _ready() -> void:
@@ -68,7 +77,50 @@ func _build_ui() -> void:
 	_setup_display.fit_content = false
 	_main_vbox.add_child(_setup_display)
 
-	# Activity log (hidden initially)
+	# Split container: vision (left) + activity feed (right)
+	# Hidden initially — shown when AI connects
+	_split_container = HSplitContainer.new()
+	_split_container.size_flags_vertical = SIZE_EXPAND_FILL
+	_split_container.size_flags_horizontal = SIZE_EXPAND_FILL
+	_split_container.split_offset = VISION_PANEL_WIDTH
+	_split_container.visible = false
+	_main_vbox.add_child(_split_container)
+
+	# Left panel: Agent vision
+	_vision_panel = VBoxContainer.new()
+	_vision_panel.custom_minimum_size = Vector2(VISION_PANEL_WIDTH, 0)
+	_split_container.add_child(_vision_panel)
+
+	# Screenshot display
+	_screenshot_rect = TextureRect.new()
+	_screenshot_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_screenshot_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_screenshot_rect.custom_minimum_size = Vector2(VISION_PANEL_WIDTH, 180)
+	_screenshot_rect.size_flags_horizontal = SIZE_EXPAND_FILL
+	_vision_panel.add_child(_screenshot_rect)
+
+	# Placeholder when no screenshot yet
+	var placeholder := Label.new()
+	placeholder.text = "Waiting for game snapshot..."
+	placeholder.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	placeholder.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	placeholder.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	placeholder.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	_screenshot_rect.add_child(placeholder)
+
+	# Node info below screenshot
+	_node_info_label = RichTextLabel.new()
+	_node_info_label.bbcode_enabled = true
+	_node_info_label.scroll_following = false
+	_node_info_label.size_flags_vertical = SIZE_EXPAND_FILL
+	_node_info_label.size_flags_horizontal = SIZE_EXPAND_FILL
+	_node_info_label.selection_enabled = true
+	_node_info_label.fit_content = false
+	_node_info_label.custom_minimum_size = Vector2(0, 60)
+	_vision_panel.add_child(_node_info_label)
+	_update_node_info({})
+
+	# Right panel: Activity log
 	_log_display = RichTextLabel.new()
 	_log_display.bbcode_enabled = true
 	_log_display.scroll_following = true
@@ -76,8 +128,7 @@ func _build_ui() -> void:
 	_log_display.size_flags_horizontal = SIZE_EXPAND_FILL
 	_log_display.selection_enabled = true
 	_log_display.fit_content = false
-	_log_display.visible = false
-	_main_vbox.add_child(_log_display)
+	_split_container.add_child(_log_display)
 
 
 ## Show setup instructions for first-time users.
@@ -121,8 +172,8 @@ func _switch_to_activity_view() -> void:
 	_has_received_request = true
 	if _setup_display:
 		_setup_display.visible = false
-	if _log_display:
-		_log_display.visible = true
+	if _split_container:
+		_split_container.visible = true
 	set_status("Connected")
 
 
@@ -149,6 +200,70 @@ func log_action(method: String, path: String, summary: String = "") -> void:
 	# Update status with request count
 	if _status_label and method != "SYSTEM":
 		_status_label.text = "AI Bridge — Active (%d requests) — Last: %s %s" % [_request_count, method, path]
+
+
+## Update the agent vision screenshot.
+func update_vision(image_base64: String, node_summary: Dictionary = {}) -> void:
+	_switch_to_activity_view()
+
+	# Decode the base64 JPEG into an ImageTexture
+	var raw: PackedByteArray = Marshalls.base64_to_raw(image_base64)
+	var img := Image.new()
+	var err: Error = img.load_jpg_from_buffer(raw)
+	if err != OK:
+		# Try PNG as fallback
+		err = img.load_png_from_buffer(raw)
+		if err != OK:
+			return
+
+	var tex := ImageTexture.create_from_image(img)
+	if _screenshot_rect:
+		_screenshot_rect.texture = tex
+		# Remove the placeholder label once we have a real image
+		for child: Node in _screenshot_rect.get_children():
+			if child is Label:
+				child.queue_free()
+
+	_update_node_info(node_summary)
+
+
+## Update the node info display below the screenshot.
+func _update_node_info(summary: Dictionary) -> void:
+	if _node_info_label == null:
+		return
+
+	_node_info_label.clear()
+
+	if summary.is_empty():
+		_node_info_label.append_text("[color=gray][i]No snapshot data yet[/i][/color]")
+		return
+
+	var text: String = ""
+
+	# Scene name and node count
+	var scene_name: String = str(summary.get("scene", ""))
+	var node_count: int = int(summary.get("node_count", 0))
+	var fps: Variant = summary.get("fps", "?")
+	var paused: bool = summary.get("paused", false)
+	var frame: Variant = summary.get("frame", "?")
+
+	if scene_name != "":
+		text += "[b]%s[/b]" % scene_name
+		if paused:
+			text += " [color=#dcdcaa](PAUSED)[/color]"
+		text += "\n"
+
+	var info_parts: PackedStringArray = []
+	if node_count > 0:
+		info_parts.append("%d nodes" % node_count)
+	if str(fps) != "?":
+		info_parts.append("%s FPS" % str(fps))
+	if str(frame) != "?":
+		info_parts.append("frame %s" % str(frame))
+	if info_parts.size() > 0:
+		text += "[color=gray]%s[/color]" % " · ".join(info_parts)
+
+	_node_info_label.append_text(text)
 
 
 ## Set the status text in the header.
@@ -189,8 +304,6 @@ func _generate_mcp_config() -> String:
 
 ## Compute the absolute path to the MCP server.py file.
 func _compute_mcp_server_path() -> void:
-	# The MCP server is bundled inside the addon at:
-	# res://addons/godot_ai_bridge/mcp_server/server.py
 	var server_res_path: String = "res://addons/godot_ai_bridge/mcp_server/server.py"
 	_mcp_server_path = ProjectSettings.globalize_path(server_res_path)
 
@@ -220,4 +333,19 @@ func _on_clear() -> void:
 	_request_count = 0
 	if _log_display:
 		_log_display.clear()
+	if _screenshot_rect:
+		_screenshot_rect.texture = null
+		# Re-add placeholder
+		for child: Node in _screenshot_rect.get_children():
+			if child is Label:
+				child.queue_free()
+		var placeholder := Label.new()
+		placeholder.text = "Waiting for game snapshot..."
+		placeholder.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		placeholder.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		placeholder.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		placeholder.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+		_screenshot_rect.add_child(placeholder)
+	if _node_info_label:
+		_update_node_info({})
 	set_status("Log cleared")

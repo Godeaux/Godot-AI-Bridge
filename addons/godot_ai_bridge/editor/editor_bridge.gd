@@ -8,6 +8,7 @@ var _routes_handler: EditorRoutes
 
 func _ready() -> void:
 	_routes_handler = EditorRoutes.new()
+	_routes_handler.set_bridge(self)
 
 	# Scene & Node operations
 	register_route("GET", "/scene/tree", _routes_handler.handle_get_scene_tree)
@@ -59,6 +60,9 @@ func _ready() -> void:
 	register_route("POST", "/game/run", _routes_handler.handle_run_game)
 	register_route("POST", "/game/stop", _routes_handler.handle_stop_game)
 	register_route("GET", "/game/is_running", _routes_handler.handle_is_running)
+
+	# Agent vision (receives game screenshots from MCP server)
+	register_route("POST", "/agent/vision", _routes_handler.handle_agent_vision)
 
 	# Editor screenshot
 	register_route("GET", "/screenshot", _routes_handler.handle_screenshot)

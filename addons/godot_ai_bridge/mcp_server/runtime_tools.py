@@ -25,6 +25,26 @@ def _b64_image(b64_data: str) -> dict[str, str]:
 
 GAME_NOT_RUNNING_MSG = "Game is not running. Use godot_run_game() to start it first."
 
+
+async def _push_vision(image_b64: str, snapshot_data: dict[str, Any] | None = None) -> None:
+    """Push a game screenshot to the editor bridge for live display in the activity panel.
+
+    This is fire-and-forget — if the editor bridge is unreachable, we silently skip.
+    """
+    try:
+        body: dict[str, Any] = {"image": image_b64}
+        if snapshot_data:
+            body["summary"] = {
+                "scene": snapshot_data.get("scene_name", ""),
+                "node_count": _count_nodes(snapshot_data.get("nodes", [])),
+                "fps": snapshot_data.get("fps", "?"),
+                "paused": snapshot_data.get("paused", False),
+                "frame": snapshot_data.get("frame", "?"),
+            }
+        await editor.post("/agent/vision", body, timeout=2.0)
+    except Exception:
+        pass  # Non-critical — don't break the tool if the editor is busy
+
 # Markers that indicate an error line in Godot console / log output.
 _ERROR_MARKERS = ("error", "exception", "traceback", "script error", "node not found")
 
@@ -181,6 +201,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         if screenshot_data:
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data)
 
         return result
 
@@ -206,9 +227,11 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if "error" in data:
             return [str(data["error"])]
 
+        image_data = data["image"]
+        await _push_vision(image_data)
         return [
             f"Game screenshot ({data['size'][0]}x{data['size'][1]}, frame {data.get('frame', '?')})",
-            _b64_image(data["image"]),
+            _b64_image(image_data),
         ]
 
     @mcp.tool
@@ -412,6 +435,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         result: list[Any] = [summary, data]
         if screenshot_data:
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data)
         return result
 
     # --- State ---
@@ -559,6 +583,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         result: list[Any] = [summary, data]
         if screenshot_data and isinstance(screenshot_data, str):
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data)
         return result
 
     @mcp.tool
@@ -634,6 +659,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         result: list[Any] = [summary, data]
         if screenshot_data and isinstance(screenshot_data, str):
             result.append(_b64_image(screenshot_data))
+            await _push_vision(screenshot_data, data.get("snapshot") if isinstance(data.get("snapshot"), dict) else data)
         return result
 
     # --- Game Control ---
