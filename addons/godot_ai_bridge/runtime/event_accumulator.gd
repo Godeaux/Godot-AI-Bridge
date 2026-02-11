@@ -19,9 +19,6 @@ const AUTO_SIGNALS_3D: PackedStringArray = [
 const AUTO_SIGNALS_ANIM: PackedStringArray = [
 	"animation_finished",
 ]
-const AUTO_SIGNALS_VISIBILITY: PackedStringArray = [
-	"visibility_changed",
-]
 
 var _events: Array[Dictionary] = []
 var _event_id: int = 0
@@ -30,14 +27,17 @@ var _tree: SceneTree
 ## Property watches: Array of {node_path: String, property: String, last_value: Variant, label: String}
 var _watches: Array[Dictionary] = []
 
-## Tracks which nodes we've already connected auto-signals to, keyed by instance_id.
+## Tracks which nodes we've already connected auto-signals to.
+## Maps instance_id → Array[Callable] (the callbacks we connected).
 var _connected_nodes: Dictionary = {}
 
 ## Track the current scene path to detect scene changes.
 var _current_scene_path: String = ""
 
 ## Whether the accumulator is actively collecting events.
-var _active: bool = true
+## Starts false — only start() enables recording, preventing spurious events
+## from node additions during bridge initialization.
+var _active: bool = false
 
 
 func _init(tree: SceneTree) -> void:
@@ -194,74 +194,67 @@ func _try_connect_node(node: Node) -> void:
 	if node is BridgeHTTPServer:
 		return
 
-	var any_connected: bool = false
+	var callbacks: Array[Callable] = []
+
+	# Helper: create a callback once and connect it
+	var _connect_1arg := func(n: Node, sig: String) -> void:
+		if n.has_signal(sig):
+			var cb: Callable = _make_signal_callback(n, sig)
+			n.connect(sig, cb)
+			callbacks.append(cb)
+
+	var _connect_noarg := func(n: Node, sig: String) -> void:
+		if n.has_signal(sig):
+			var cb: Callable = _make_signal_callback_noarg(n, sig)
+			n.connect(sig, cb)
+			callbacks.append(cb)
 
 	# Area2D / Area3D — body/area enter/exit
 	if node is Area2D:
 		for sig: String in AUTO_SIGNALS_2D:
-			if node.has_signal(sig) and not node.is_connected(sig, _make_signal_callback(node, sig)):
-				node.connect(sig, _make_signal_callback(node, sig))
-				any_connected = true
+			_connect_1arg.call(node, sig)
 
 	if node is Area3D:
 		for sig: String in AUTO_SIGNALS_3D:
-			if node.has_signal(sig) and not node.is_connected(sig, _make_signal_callback(node, sig)):
-				node.connect(sig, _make_signal_callback(node, sig))
-				any_connected = true
+			_connect_1arg.call(node, sig)
 
 	# CollisionObject2D (StaticBody2D, RigidBody2D, CharacterBody2D) — body signals
 	if node is CollisionObject2D and not node is Area2D:
 		for sig_name: String in ["body_entered", "body_exited"]:
-			if node.has_signal(sig_name) and not node.is_connected(sig_name, _make_signal_callback(node, sig_name)):
-				node.connect(sig_name, _make_signal_callback(node, sig_name))
-				any_connected = true
+			_connect_1arg.call(node, sig_name)
 
 	if node is CollisionObject3D and not node is Area3D:
 		for sig_name: String in ["body_entered", "body_exited"]:
-			if node.has_signal(sig_name) and not node.is_connected(sig_name, _make_signal_callback(node, sig_name)):
-				node.connect(sig_name, _make_signal_callback(node, sig_name))
-				any_connected = true
+			_connect_1arg.call(node, sig_name)
 
 	# AnimationPlayer — animation_finished
 	if node is AnimationPlayer:
 		for sig: String in AUTO_SIGNALS_ANIM:
-			if node.has_signal(sig) and not node.is_connected(sig, _make_signal_callback(node, sig)):
-				node.connect(sig, _make_signal_callback(node, sig))
-				any_connected = true
+			_connect_1arg.call(node, sig)
 
 	# AnimatedSprite2D / AnimatedSprite3D — animation_finished
 	if node is AnimatedSprite2D or node is AnimatedSprite3D:
-		if node.has_signal("animation_finished") and not node.is_connected("animation_finished", _make_signal_callback(node, "animation_finished")):
-			node.connect("animation_finished", _make_signal_callback(node, "animation_finished"))
-			any_connected = true
+		_connect_1arg.call(node, "animation_finished")
 
 	# VisibleOnScreenNotifier2D / VisibleOnScreenNotifier3D
 	if node is VisibleOnScreenNotifier2D:
 		for sig: String in ["screen_entered", "screen_exited"]:
-			if node.has_signal(sig) and not node.is_connected(sig, _make_signal_callback_noarg(node, sig)):
-				node.connect(sig, _make_signal_callback_noarg(node, sig))
-				any_connected = true
+			_connect_noarg.call(node, sig)
 
 	if node is VisibleOnScreenNotifier3D:
 		for sig: String in ["screen_entered", "screen_exited"]:
-			if node.has_signal(sig) and not node.is_connected(sig, _make_signal_callback_noarg(node, sig)):
-				node.connect(sig, _make_signal_callback_noarg(node, sig))
-				any_connected = true
+			_connect_noarg.call(node, sig)
 
 	# Timer — timeout
 	if node is Timer:
-		if not node.is_connected("timeout", _make_signal_callback_noarg(node, "timeout")):
-			node.connect("timeout", _make_signal_callback_noarg(node, "timeout"))
-			any_connected = true
+		_connect_noarg.call(node, "timeout")
 
 	# Button — pressed
 	if node is BaseButton:
-		if not node.is_connected("pressed", _make_signal_callback_noarg(node, "pressed")):
-			node.connect("pressed", _make_signal_callback_noarg(node, "pressed"))
-			any_connected = true
+		_connect_noarg.call(node, "pressed")
 
-	if any_connected:
-		_connected_nodes[iid] = true
+	if not callbacks.is_empty():
+		_connected_nodes[iid] = callbacks
 
 
 ## Create a callback for signals that pass one Node argument (body_entered, etc.).
