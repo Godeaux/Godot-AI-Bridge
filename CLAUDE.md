@@ -18,6 +18,7 @@ game_trigger_action("jump")         →  Jump onto the platform
 game_wait(1.0)           →  Let the physics play out
     ↓
 game_snapshot()          →  See what happened — did the player land on the platform?
+game_events()            →  See what happened in between — collisions, pickups, deaths
     ↓
 Think again              →  "The player overshot. Let me adjust..."
 ```
@@ -44,6 +45,7 @@ Interact with the actual running game. Take snapshots, inject input, read and mo
 - **Input**: `game_click`, `game_click_node`, `game_press_key`, `game_trigger_action`, `game_mouse_move`, `game_input_sequence`
 - **State**: `game_state` (deep node inspection), `game_set_property` (modify values at runtime), `game_call_method`
 - **Waiting**: `game_wait` (wait N seconds), `game_wait_for` (wait for conditions: property equals, node exists, signal)
+- **Events**: `game_events` (drain buffered events), `game_add_watch` (monitor a property), `game_remove_watch`, `game_get_watches`
 - **Control**: `game_pause`, `game_set_timescale`
 - **Diagnostics**: `game_console_output`, `game_snapshot_diff`, `game_scene_history`, `game_list_actions`
 
@@ -92,6 +94,8 @@ The key insight: **you are looking at a screenshot of a real game and deciding w
 - **Use `godot_connect_signal`** to wire up signal connections — e.g., connect a button's `pressed` signal to a handler method.
 - **Use `godot_add_input_action` + `godot_add_input_binding`** to set up input mappings — create actions and bind keys/buttons to them.
 - **Use `godot_add_to_group`** to tag nodes for easy lookup — then find them with `godot_find_nodes(group="enemies")`.
+- **Use `game_events`** to see what happened between snapshots — collisions, animations finishing, nodes spawning/despawning, property changes, scene transitions. Snapshots show `pending_events` count; when > 0, call `game_events()`.
+- **Use `game_add_watch`** to track important gameplay values (health, score, ammo) so changes appear automatically in `game_events()` without manual polling.
 
 ## Reading Snapshots
 
@@ -181,6 +185,30 @@ For fast-paced games where things happen too quickly to observe:
 2. game_trigger_action("attack")   →  Perform the action
 3. game_snapshot()                 →  See intermediate states clearly
 4. game_set_timescale(1.0)         →  Return to normal speed
+```
+
+## Advanced: Event Accumulator
+
+The event accumulator captures what happens *between* your observations — things a snapshot alone would miss. Auto-monitored signals include physics collisions (body_entered/exited, area_entered/exited), animation completions, button presses, timer timeouts, visibility changes, and node lifecycle events.
+
+```
+1. game_add_watch("Player", "health", "player_hp")     →  Watch player health
+2. game_add_watch("HUD/ScoreLabel", "text", "score")   →  Watch the score display
+3. game_trigger_action("move_right", pressed=true)
+4. game_wait(3.0)
+5. game_trigger_action("move_right", pressed=false)
+6. game_events()                    →  See everything that happened:
+   → {"type": "signal", "source": "Player", "detail": {"signal": "body_entered", "args": ["Enemy"]}}
+   → {"type": "property_changed", "source": "Player", "detail": {"property": "health", "old_value": 100, "new_value": 75}}
+   → {"type": "signal", "source": "Enemy", "detail": {"signal": "body_exited", "args": ["Player"]}}
+   → {"type": "node_removed", "source": "Coins/Coin3", "detail": {"type": "Area2D", "name": "Coin3"}}
+```
+
+Snapshots include `pending_events` — when it's > 0, call `game_events()` to see what you missed:
+
+```
+1. game_snapshot()                  →  pending_events: 5
+2. game_events()                    →  5 events showing collisions, pickups, etc.
 ```
 
 ## Advanced: Efficient Change Detection

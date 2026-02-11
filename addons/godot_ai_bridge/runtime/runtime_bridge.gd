@@ -38,6 +38,10 @@ func _ready() -> void:
 	register_route("GET", "/console", _on_console)
 	register_route("GET", "/snapshot/diff", _on_snapshot_diff)
 	register_route("GET", "/scene_history", _on_scene_history)
+	register_route("GET", "/events", _on_events)
+	register_route("POST", "/events/watch", _on_add_watch)
+	register_route("POST", "/events/unwatch", _on_remove_watch)
+	register_route("GET", "/events/watches", _on_get_watches)
 
 	var err: Error = start(BridgeConfig.RUNTIME_PORT)
 	if err == OK:
@@ -116,3 +120,15 @@ func _on_snapshot_diff(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 
 func _on_scene_history(request: BridgeHTTPServer.BridgeRequest) -> Variant:
 	return _routes_handler.handle_scene_history(request)
+
+func _on_events(request: BridgeHTTPServer.BridgeRequest) -> Variant:
+	return _routes_handler.handle_events(request)
+
+func _on_add_watch(request: BridgeHTTPServer.BridgeRequest) -> Variant:
+	return _routes_handler.handle_add_watch(request)
+
+func _on_remove_watch(request: BridgeHTTPServer.BridgeRequest) -> Variant:
+	return _routes_handler.handle_remove_watch(request)
+
+func _on_get_watches(request: BridgeHTTPServer.BridgeRequest) -> Variant:
+	return _routes_handler.handle_get_watches(request)
