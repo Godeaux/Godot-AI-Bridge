@@ -600,6 +600,14 @@ func handle_get_director(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary
 	}
 
 
+## GET /info — Lightweight health-check / identification endpoint.
+func handle_info(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	return {
+		"bridge": "editor",
+		"port": BridgeConfig.EDITOR_PORT,
+	}
+
+
 ## Get a reference to the parent EditorBridge node.
 func get_bridge() -> Node:
 	return _bridge_ref

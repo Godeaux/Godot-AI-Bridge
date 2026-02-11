@@ -67,6 +67,9 @@ func _ready() -> void:
 	# Director (developer sends directives to the AI agent)
 	register_route("GET", "/agent/director", _routes_handler.handle_get_director)
 
+	# Info / health check
+	register_route("GET", "/info", _routes_handler.handle_info)
+
 	# Editor screenshot
 	register_route("GET", "/screenshot", _routes_handler.handle_screenshot)
 

@@ -543,10 +543,8 @@ func _color_for_method(method: String) -> String:
 
 
 func _exit_tree() -> void:
-	if _copy_config_button != null and _copy_config_button.pressed.is_connected(_on_copy_config):
-		_copy_config_button.pressed.disconnect(_on_copy_config)
-	if _clear_button != null and _clear_button.pressed.is_connected(_on_clear):
-		_clear_button.pressed.disconnect(_on_clear)
+	# All signal connections are on child nodes that get freed with the panel,
+	# so explicit disconnection is unnecessary.
 
 
 func _on_clear() -> void:
