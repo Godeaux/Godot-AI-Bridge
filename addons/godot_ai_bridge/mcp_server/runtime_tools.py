@@ -229,7 +229,9 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         node_count = _count_nodes(data.get("nodes", []))
         fps = data.get("fps", "?")
         paused = " (PAUSED)" if data.get("paused") else ""
-        summary = f"📷 Snapshot of '{scene}' — {node_count} nodes, {fps} FPS{paused}, frame {data.get('frame', '?')}"
+        pending = data.get("pending_events", 0)
+        events_hint = f", {pending} pending event(s)" if pending > 0 else ""
+        summary = f"📷 Snapshot of '{scene}' — {node_count} nodes, {fps} FPS{paused}, frame {data.get('frame', '?')}{events_hint}"
 
         result: list[Any] = [summary, data]
 
@@ -916,4 +918,119 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         if "error" not in result and "_description" not in result:
             count = len(result.get("actions", {}))
             result["_description"] = f"🎮 {count} input action(s) available"
+        return result
+
+    # --- Event Accumulator ---
+
+    @mcp.tool
+    async def game_events(peek: bool = False) -> dict[str, Any]:
+        """Get accumulated game events since the last call.
+
+        The event accumulator captures significant things that happen between
+        your observations: physics collisions, animations finishing, nodes
+        being added/removed, property changes on watched values, scene
+        transitions, button presses, and timer timeouts.
+
+        By default, events are drained (returned and cleared). Set peek=True
+        to read without clearing, so you can check again later.
+
+        Each event has:
+        - id: Unique monotonic ID
+        - type: "signal", "node_added", "node_removed", "property_changed", "scene_changed"
+        - time: When it happened (seconds since engine start)
+        - frame: Engine frame number
+        - source: Node path relative to scene root
+        - detail: Type-specific data (signal name, args, property values, etc.)
+
+        Call this after game_wait() or game_input_sequence() to see what
+        happened during the action — collisions, deaths, pickups, scene
+        changes — things a snapshot alone would miss.
+
+        IMPORTANT: Snapshots now include a 'pending_events' count. When you
+        see pending_events > 0, call game_events() to find out what happened.
+
+        Args:
+            peek: If True, read events without clearing them (default False).
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        params: dict[str, str] = {}
+        if peek:
+            params["peek"] = "true"
+        result = await runtime.get("/events", params)
+        if "error" not in result and "_description" not in result:
+            count = len(result.get("events", []))
+            mode = " (peek)" if peek else ""
+            result["_description"] = f"📨 {count} game event(s){mode}"
+        return result
+
+    @mcp.tool
+    async def game_add_watch(
+        node_path: str,
+        property: str,
+        label: str = "",
+    ) -> dict[str, Any]:
+        """Watch a node property for changes in the running game.
+
+        When a watched property changes value, a 'property_changed' event is
+        recorded with old and new values. Events are retrieved via game_events().
+
+        This is ideal for tracking gameplay-critical values without polling:
+        player health, score, ammo count, boss phase, etc.
+
+        Args:
+            node_path: Path to the node relative to scene root (e.g., 'Player', 'HUD/ScoreLabel').
+            property: Property name to watch (e.g., 'health', 'score', 'text', 'visible').
+            label: Human-readable label for the watch (e.g., 'player_health'). Auto-generated if empty.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        result = await runtime.post("/events/watch", {
+            "node_path": node_path,
+            "property": property,
+            "label": label,
+        })
+        if "_description" not in result:
+            result["_description"] = f"👁️ Watching '{node_path}.{property}'"
+        return result
+
+    @mcp.tool
+    async def game_remove_watch(node_path: str, property: str) -> dict[str, Any]:
+        """Stop watching a node property for changes.
+
+        Args:
+            node_path: Path to the node (must match what was passed to game_add_watch).
+            property: Property name (must match what was passed to game_add_watch).
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        result = await runtime.post("/events/unwatch", {
+            "node_path": node_path,
+            "property": property,
+        })
+        if "_description" not in result:
+            result["_description"] = f"👁️ Unwatched '{node_path}.{property}'"
+        return result
+
+    @mcp.tool
+    async def game_get_watches() -> dict[str, Any]:
+        """List all active property watches.
+
+        Shows which properties are being monitored for changes, along with
+        their current (last seen) values.
+        """
+        err = await _check_runtime()
+        if err:
+            return {"error": err}
+
+        result = await runtime.get("/events/watches")
+        if "error" not in result and "_description" not in result:
+            count = len(result.get("watches", []))
+            result["_description"] = f"👁️ {count} active watch(es)"
         return result

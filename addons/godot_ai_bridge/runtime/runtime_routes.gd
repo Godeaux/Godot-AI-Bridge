@@ -9,12 +9,15 @@ var _tree: SceneTree
 var _previous_snapshot: Dictionary = {}
 var _scene_history: Array[Dictionary] = []
 var _scene_history_max: int = 50
+var _accumulator: EventAccumulator
 
 
 func _init(tree: SceneTree) -> void:
 	_tree = tree
 	_snapshot = RuntimeSnapshot.new()
 	_injector = InputInjector.new(tree)
+	_accumulator = EventAccumulator.new(tree)
+	_accumulator.start()
 
 	# Track scene changes for history
 	_tree.tree_changed.connect(_on_tree_changed)
@@ -22,6 +25,8 @@ func _init(tree: SceneTree) -> void:
 
 ## Disconnect signals to prevent leaks when the runtime bridge shuts down.
 func cleanup() -> void:
+	if _accumulator != null:
+		_accumulator.cleanup()
 	if _tree != null and _tree.tree_changed.is_connected(_on_tree_changed):
 		_tree.tree_changed.disconnect(_on_tree_changed)
 
@@ -81,11 +86,17 @@ func handle_snapshot(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	else:
 		result["screenshot"] = null
 
+	# Poll the event accumulator so property watches and scene changes are up to date
+	_accumulator.poll()
+	var pending_events: int = _accumulator.count()
+	result["pending_events"] = pending_events
+
 	var scene_name: String = result.get("scene_name", "unknown")
 	var node_count: int = _count_snapshot_nodes(result.get("nodes", []))
 	var fps: String = str(result.get("fps", "?"))
 	var paused_str: String = " (PAUSED)" if result.get("paused", false) else ""
-	result["_description"] = "📷 Snapshot of '%s' — %d nodes, %s FPS%s" % [scene_name, node_count, fps, paused_str]
+	var events_str: String = ", %d pending event(s)" % pending_events if pending_events > 0 else ""
+	result["_description"] = "📷 Snapshot of '%s' — %d nodes, %s FPS%s%s" % [scene_name, node_count, fps, paused_str, events_str]
 
 	return result
 
@@ -653,6 +664,80 @@ func handle_snapshot_diff(request: BridgeHTTPServer.BridgeRequest) -> Dictionary
 		"diff": diff,
 		"snapshot": current,
 		"_description": "📊 Snapshot diff — %d added, %d removed, %d changed" % [added, removed, changed],
+	}
+
+
+## GET /events — Drain accumulated game events since last call.
+func handle_events(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	# Poll watches and scene changes before draining
+	_accumulator.poll()
+
+	var peek_only: bool = request.query_params.get("peek", "false") == "true"
+	var events: Array[Dictionary]
+	if peek_only:
+		events = _accumulator.peek()
+	else:
+		events = _accumulator.drain()
+
+	return {
+		"events": events,
+		"count": events.size(),
+		"_description": "📨 %d game event(s)%s" % [events.size(), " (peek)" if peek_only else ""],
+	}
+
+
+## POST /events/watch — Add a property watch.
+func handle_add_watch(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var node_path: String = str(body.get("node_path", ""))
+	var property: String = str(body.get("property", ""))
+	var label: String = str(body.get("label", ""))
+
+	if node_path == "":
+		return {"error": "Must provide 'node_path'"}
+	if property == "":
+		return {"error": "Must provide 'property'"}
+
+	var ok: bool = _accumulator.add_watch(node_path, property, label)
+	if not ok:
+		return {"error": "Watch already exists or node not found for '%s.%s'" % [node_path, property]}
+
+	return {
+		"ok": true,
+		"watches": _accumulator.get_watches(),
+		"_description": "👁️ Watching '%s.%s'" % [node_path, property],
+	}
+
+
+## POST /events/unwatch — Remove a property watch.
+func handle_remove_watch(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var node_path: String = str(body.get("node_path", ""))
+	var property: String = str(body.get("property", ""))
+
+	if node_path == "":
+		return {"error": "Must provide 'node_path'"}
+	if property == "":
+		return {"error": "Must provide 'property'"}
+
+	var ok: bool = _accumulator.remove_watch(node_path, property)
+	if not ok:
+		return {"error": "Watch not found for '%s.%s'" % [node_path, property]}
+
+	return {
+		"ok": true,
+		"watches": _accumulator.get_watches(),
+		"_description": "👁️ Unwatched '%s.%s'" % [node_path, property],
+	}
+
+
+## GET /events/watches — List current property watches.
+func handle_get_watches(_request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var watches: Array[Dictionary] = _accumulator.get_watches()
+	return {
+		"watches": watches,
+		"count": watches.size(),
+		"_description": "👁️ %d active watch(es)" % watches.size(),
 	}
 
 
