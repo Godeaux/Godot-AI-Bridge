@@ -284,6 +284,30 @@ def register_editor_tools(mcp: FastMCP) -> None:
         return result
 
     @mcp.tool
+    async def godot_reorder_node(
+        path: str,
+        position: int | str,
+    ) -> dict[str, Any]:
+        """Move a node up/down among its siblings (changes draw order in 2D, UI layout order).
+
+        In Godot, child order determines draw order (later = on top) and
+        UI layout order. Use this to control z-ordering without z_index.
+
+        Args:
+            path: Node path (e.g., 'Player', 'UI/Panel').
+            position: Target position — an integer index (0 = first child),
+                      or one of: 'up' (one step earlier), 'down' (one step later),
+                      'first' (move to front), 'last' (move to back).
+        """
+        result = await editor.post("/node/reorder", {
+            "path": path,
+            "position": position,
+        })
+        if "ok" in result and "_description" not in result:
+            result["_description"] = f"↕️ Reordered '{path}' → index {result.get('new_index', '?')}"
+        return result
+
+    @mcp.tool
     async def godot_list_node_properties(path: str) -> dict[str, Any]:
         """List all editable properties of a node in the currently edited scene.
 

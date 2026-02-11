@@ -26,6 +26,20 @@ static func _walk_node(node: Node) -> Dictionary:
 		"path": str(node.get_path()),
 	}
 
+	# Include script path if one is attached
+	var script: Script = node.get_script() as Script
+	if script != null and script.resource_path != "":
+		data["script"] = script.resource_path
+
+	# Include persistent groups (skip internal groups starting with "_")
+	var groups: Array = []
+	for g: StringName in node.get_groups():
+		var gs: String = str(g)
+		if not gs.begins_with("_"):
+			groups.append(gs)
+	if groups.size() > 0:
+		data["groups"] = groups
+
 	var children: Array = []
 	for child: Node in node.get_children():
 		if not str(child.name).begins_with("@"):
@@ -196,6 +210,52 @@ static func reparent_node(node_path: String, new_parent_path: String, keep_globa
 	_set_owner_recursive(node, root)
 
 	return {"ok": true, "new_path": str(root.get_path_to(node))}
+
+
+## Move a node to a specific position among its siblings.
+## position can be an absolute index, or the string "up"/"down" for relative moves.
+static func reorder_node(node_path: String, position: Variant) -> Dictionary:
+	var root: Node = EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "No scene is currently open"}
+
+	var node: Node = root if node_path == "." or node_path == "" else root.get_node_or_null(node_path)
+	if node == null:
+		return {"error": "Node not found: %s" % node_path}
+
+	if node == root:
+		return {"error": "Cannot reorder the root node"}
+
+	var parent: Node = node.get_parent()
+	if parent == null:
+		return {"error": "Node has no parent"}
+
+	var current_index: int = node.get_index()
+	var sibling_count: int = parent.get_child_count()
+	var target_index: int = -1
+
+	if position is String:
+		match position:
+			"up":
+				target_index = max(current_index - 1, 0)
+			"down":
+				target_index = min(current_index + 1, sibling_count - 1)
+			"first":
+				target_index = 0
+			"last":
+				target_index = sibling_count - 1
+			_:
+				return {"error": "Unknown position string: '%s' (expected 'up', 'down', 'first', 'last' or an integer)" % str(position)}
+	else:
+		target_index = int(position)
+		if target_index < 0 or target_index >= sibling_count:
+			return {"error": "Index %d out of range (parent has %d children)" % [target_index, sibling_count]}
+
+	if target_index == current_index:
+		return {"ok": true, "index": current_index, "note": "Already at requested position"}
+
+	parent.move_child(node, target_index)
+	return {"ok": true, "old_index": current_index, "new_index": node.get_index()}
 
 
 ## List all properties of a node in the currently edited scene.
@@ -407,7 +467,9 @@ static func connect_signal(source_path: String, signal_name: String, target_path
 	if source.is_connected(signal_name, Callable(target, method_name)):
 		return {"error": "Signal '%s' is already connected to '%s.%s'" % [signal_name, target_path, method_name]}
 
-	var err: Error = source.connect(signal_name, Callable(target, method_name))
+	# CONNECT_PERSIST ensures the connection is saved into the .tscn file,
+	# matching the behavior of connections made through the editor GUI.
+	var err: Error = source.connect(signal_name, Callable(target, method_name), Object.CONNECT_PERSIST)
 	if err != OK:
 		return {"error": "Failed to connect signal: %s" % error_string(err)}
 

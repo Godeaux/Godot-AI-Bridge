@@ -20,6 +20,7 @@ func _ready() -> void:
 	register_route("POST", "/scene/open", _routes_handler.handle_open_scene)
 	register_route("POST", "/node/duplicate", _routes_handler.handle_duplicate_node)
 	register_route("POST", "/node/reparent", _routes_handler.handle_reparent_node)
+	register_route("POST", "/node/reorder", _routes_handler.handle_reorder_node)
 	register_route("GET", "/node/properties", _routes_handler.handle_list_node_properties)
 	register_route("POST", "/node/rename", _routes_handler.handle_rename_node)
 	register_route("POST", "/node/instance_scene", _routes_handler.handle_instance_scene)

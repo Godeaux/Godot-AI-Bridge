@@ -155,6 +155,23 @@ func handle_reparent_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary
 	return result
 
 
+## POST /node/reorder
+func handle_reorder_node(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
+	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
+	var path: String = str(body.get("path", ""))
+	var position: Variant = body.get("position", "")
+
+	if path == "":
+		return {"error": "Must provide 'path'"}
+	if position is String and position == "":
+		return {"error": "Must provide 'position' (integer index, or 'up'/'down'/'first'/'last')"}
+
+	var result: Dictionary = _SceneTools.reorder_node(path, position)
+	if result.has("ok"):
+		result["_description"] = "↕️ Reordered '%s' → index %s" % [path, str(result.get("new_index", "?"))]
+	return result
+
+
 ## GET /node/properties
 func handle_list_node_properties(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var path: String = request.query_params.get("path", "")

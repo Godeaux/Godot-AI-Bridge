@@ -248,7 +248,10 @@ static func add_input_binding(action_name: String, event_type: String, value: St
 			var keycode: Key = OS.find_keycode_from_string(value)
 			if keycode == KEY_NONE:
 				return {"error": "Unknown key: '%s'" % value}
-			key_event.keycode = keycode
+			# Use physical_keycode to match the Godot editor's default behavior.
+			# Physical keycodes are layout-agnostic (based on US QWERTY position),
+			# which is what the editor creates when you bind keys through the GUI.
+			key_event.physical_keycode = keycode
 			event = key_event
 		"mouse_button":
 			var mb_event := InputEventMouseButton.new()
