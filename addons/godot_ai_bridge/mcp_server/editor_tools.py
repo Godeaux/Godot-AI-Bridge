@@ -699,7 +699,7 @@ def register_editor_tools(mcp: FastMCP) -> None:
             params["query"] = query
         result = await editor.get("/project/search", params)
         if "error" not in result and "_description" not in result:
-            matches = len(result.get("files", result.get("results", [])))
+            matches = len(result.get("matches", []))
             term = pattern or query
             result["_description"] = f"🔎 Search '{term}' — {matches} match(es)"
         return result

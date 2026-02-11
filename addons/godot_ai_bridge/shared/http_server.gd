@@ -43,7 +43,7 @@ var activity_panel: Node = null
 func start(port: int) -> Error:
 	_port = port
 	_tcp_server = TCPServer.new()
-	var err: Error = _tcp_server.listen(port, BridgeConfig.EDITOR_HOST)
+	var err: Error = _tcp_server.listen(port, BridgeConfig.LISTEN_HOST)
 	if err != OK:
 		push_error("BridgeHTTPServer: Failed to listen on port %d: %s" % [port, error_string(err)])
 		_tcp_server = null

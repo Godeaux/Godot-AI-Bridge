@@ -675,6 +675,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         path: str = "",
         property: str = "",
         value: Any = None,
+        signal_name: str = "",
         timeout: float = 10.0,
         poll_interval: float = 0.1,
         snapshot: bool = True,
@@ -696,6 +697,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             path: Node path as alternative.
             property: Property name (for property conditions).
             value: Target value (for property conditions).
+            signal_name: Signal name to wait for (only for condition='signal').
             timeout: Max seconds to wait before giving up (default 10).
             poll_interval: How often to check the condition (default 0.1s).
             snapshot: Take snapshot after condition met (default True).
@@ -720,6 +722,8 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             body["property"] = property
         if value is not None:
             body["value"] = value
+        if signal_name:
+            body["signal"] = signal_name
 
         http_timeout = timeout + 15.0
         data = await runtime.post("/wait_for", body, timeout=http_timeout)
@@ -843,9 +847,10 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         result = await runtime.get("/snapshot/diff", {"depth": str(depth)})
         if "error" not in result and "_description" not in result:
-            added = len(result.get("added", []))
-            removed = len(result.get("removed", []))
-            changed = len(result.get("changed", []))
+            diff = result.get("diff", {})
+            added = len(diff.get("nodes_added", []))
+            removed = len(diff.get("nodes_removed", []))
+            changed = len(diff.get("nodes_changed", {}))
             result["_description"] = f"📊 Snapshot diff — {added} added, {removed} removed, {changed} changed"
         return result
 
@@ -865,7 +870,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
 
         result = await runtime.get("/scene_history")
         if "error" not in result and "_description" not in result:
-            count = len(result.get("history", []))
+            count = len(result.get("events", []))
             result["_description"] = f"📜 Scene history — {count} event(s)"
         return result
 
