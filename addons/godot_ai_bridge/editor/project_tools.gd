@@ -107,11 +107,8 @@ static func _scan_directory(path: String, current_depth: int, max_depth: int) ->
 	var file_name: String = dir.get_next()
 
 	while file_name != "":
-		# Skip hidden, .godot, and our own addon directory
-		if file_name.begins_with(".") or file_name == ".godot":
-			file_name = dir.get_next()
-			continue
-		if path == "res://" and file_name == ".godot":
+		# Skip hidden files/dirs (includes .godot) and our own addon directory
+		if file_name.begins_with("."):
 			file_name = dir.get_next()
 			continue
 

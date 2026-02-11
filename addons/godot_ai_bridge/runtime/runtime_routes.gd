@@ -274,7 +274,7 @@ func handle_mouse_move(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 func handle_sequence(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var steps: Array = body.get("steps", [])
-	var snapshot_after: bool = body.get("snapshot_after", false)
+	var snapshot_after: bool = body.get("snapshot_after", true)
 	var screenshot_after: bool = body.get("screenshot_after", false)
 
 	if steps.is_empty():
@@ -408,7 +408,7 @@ func handle_wait(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var body: Dictionary = request.json_body if request.json_body is Dictionary else {}
 	var seconds: float = float(body.get("seconds", 1.0))
 	var do_snapshot: bool = body.get("snapshot", true)
-	var do_screenshot: bool = body.get("screenshot", true)
+	var do_screenshot: bool = body.get("screenshot", false)
 
 	await _tree.create_timer(seconds).timeout
 
@@ -439,7 +439,7 @@ func handle_wait_for(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	var timeout: float = float(body.get("timeout", 10.0))
 	var poll_interval: float = float(body.get("poll_interval", 0.1))
 	var do_snapshot: bool = body.get("snapshot", true)
-	var do_screenshot: bool = body.get("screenshot", true)
+	var do_screenshot: bool = body.get("screenshot", false)
 	var signal_name: String = str(body.get("signal", ""))
 
 	var root: Node = _get_scene_root()
@@ -452,8 +452,8 @@ func handle_wait_for(request: BridgeHTTPServer.BridgeRequest) -> Dictionary:
 	while elapsed < timeout:
 		match condition:
 			"node_exists":
-				var target_path: String = path if path != "" else ref
-				var node: Node = root.get_node_or_null(target_path)
+				var target_key: String = ref if ref != "" else path
+				var node: Node = _snapshot.resolve_ref(target_key, root)
 				if node != null:
 					condition_met = true
 					break

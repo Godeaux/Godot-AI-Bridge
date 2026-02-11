@@ -317,7 +317,13 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         return result
 
     @mcp.tool
-    async def game_screenshot_node(ref: str = "", path: str = "") -> list[Any]:
+    async def game_screenshot_node(
+        ref: str = "",
+        path: str = "",
+        width: int = 640,
+        height: int = 360,
+        quality: float = 0.75,
+    ) -> list[Any]:
         """Capture a cropped screenshot of a specific node's region.
 
         Useful for inspecting UI elements up close — zoom into a button, panel,
@@ -326,12 +332,19 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         Args:
             ref: Node ref from latest snapshot (e.g., 'n5'). Preferred over path.
             path: Node path as alternative to ref (e.g., 'HUD/ScoreLabel').
+            width: Screenshot width in pixels (default 640).
+            height: Screenshot height in pixels (default 360).
+            quality: JPEG quality 0.0–1.0 (default 0.75).
         """
         err = await _check_runtime()
         if err:
             return [err]
 
-        params: dict[str, str] = {}
+        params: dict[str, str] = {
+            "width": str(width),
+            "height": str(height),
+            "quality": str(quality),
+        }
         if ref:
             params["ref"] = ref
         if path:
@@ -349,7 +362,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
     # --- Input ---
 
     @mcp.tool
-    async def game_click(x: float, y: float, button: str = "left") -> dict[str, Any]:
+    async def game_click(x: float, y: float, button: str = "left", double: bool = False) -> dict[str, Any]:
         """Click at specific screen coordinates in the running game.
 
         Prefer game_click_node when targeting a specific node — it handles coordinate
@@ -359,14 +372,19 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             x: X coordinate in screen space.
             y: Y coordinate in screen space.
             button: Mouse button — 'left', 'right', or 'middle'.
+            double: If True, send a double-click instead of a single click.
         """
         err = await _check_runtime()
         if err:
             return {"error": err}
 
-        result = await runtime.post("/click", {"x": x, "y": y, "button": button})
+        body: dict[str, Any] = {"x": x, "y": y, "button": button}
+        if double:
+            body["double"] = True
+        result = await runtime.post("/click", body)
         if "_description" not in result:
-            result["_description"] = f"🖱️ Clicked {button} at ({x:.0f}, {y:.0f})"
+            click_type = "Double-clicked" if double else "Clicked"
+            result["_description"] = f"🖱️ {click_type} {button} at ({x:.0f}, {y:.0f})"
         return result
 
     @mcp.tool
@@ -452,18 +470,30 @@ def register_runtime_tools(mcp: FastMCP) -> None:
         return result
 
     @mcp.tool
-    async def game_mouse_move(x: float, y: float) -> dict[str, Any]:
+    async def game_mouse_move(
+        x: float,
+        y: float,
+        relative_x: float = 0.0,
+        relative_y: float = 0.0,
+    ) -> dict[str, Any]:
         """Move the mouse to a position in the running game.
 
         Args:
-            x: Target X coordinate.
-            y: Target Y coordinate.
+            x: Target X coordinate (absolute position).
+            y: Target Y coordinate (absolute position).
+            relative_x: Relative X motion (for FPS-style mouse look). Added on top of absolute position.
+            relative_y: Relative Y motion (for FPS-style mouse look). Added on top of absolute position.
         """
         err = await _check_runtime()
         if err:
             return {"error": err}
 
-        result = await runtime.post("/mouse_move", {"x": x, "y": y})
+        body: dict[str, Any] = {"x": x, "y": y}
+        if relative_x != 0.0:
+            body["relative_x"] = relative_x
+        if relative_y != 0.0:
+            body["relative_y"] = relative_y
+        result = await runtime.post("/mouse_move", body)
         if "_description" not in result:
             result["_description"] = f"🖱️ Mouse moved to ({x:.0f}, {y:.0f})"
         return result
@@ -581,7 +611,7 @@ def register_runtime_tools(mcp: FastMCP) -> None:
             body["ref"] = ref
         if path:
             body["path"] = path
-        if args:
+        if args is not None:
             body["args"] = args
         result = await runtime.post("/call_method", body)
         if "_description" not in result:

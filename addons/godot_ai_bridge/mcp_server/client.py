@@ -1,8 +1,10 @@
 """HTTP client helper for communicating with Godot editor and runtime bridges.
 
-Every call has a hard 30-second cap. If Godot hasn't responded by then, the
+Every call has a hard 120-second cap. If Godot hasn't responded by then, the
 request fails immediately so the MCP tool can report an error instead of
-leaving the AI agent hanging.
+leaving the AI agent hanging.  Individual tools (game_wait, game_wait_for,
+game_input_sequence) compute their own timeouts from the requested duration
+and may exceed the default 30s, so the ceiling must accommodate them.
 """
 
 from __future__ import annotations
@@ -12,7 +14,9 @@ from typing import Any
 
 # Hard ceiling — no single HTTP request to Godot should ever take longer than
 # this.  Individual callers can pass a *shorter* timeout but never a longer one.
-MAX_TIMEOUT: float = 30.0
+# Must be high enough to cover game_wait / game_wait_for / game_input_sequence
+# which compute timeout = user_duration + 15s headroom.
+MAX_TIMEOUT: float = 120.0
 
 
 class GodotClient:
@@ -34,13 +38,12 @@ class GodotClient:
             return min(override, MAX_TIMEOUT)
         return self.timeout
 
-    def _get_client(self, timeout_override: float | None = None) -> httpx.AsyncClient:
+    def _get_client(self) -> httpx.AsyncClient:
         """Get or create the persistent HTTP client."""
-        t = self._effective_timeout(timeout_override)
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=t,
+                timeout=self.timeout,
             )
         return self._client
 
@@ -50,14 +53,14 @@ class GodotClient:
         """Send a GET request and return the JSON response."""
         t = self._effective_timeout(timeout)
         try:
-            client = self._get_client(timeout)
+            client = self._get_client()
             resp = await client.get(path, params=params, timeout=t)
             resp.raise_for_status()
             return resp.json()
         except (httpx.ConnectError, httpx.ReadError, httpx.WriteError):
             # Connection pool might be stale — retry once with a fresh client
             await self._reset_client()
-            client = self._get_client(timeout)
+            client = self._get_client()
             resp = await client.get(path, params=params, timeout=t)
             resp.raise_for_status()
             return resp.json()
@@ -74,13 +77,13 @@ class GodotClient:
         """Send a POST request with a JSON body and return the JSON response."""
         t = self._effective_timeout(timeout)
         try:
-            client = self._get_client(timeout)
+            client = self._get_client()
             resp = await client.post(path, json=json or {}, timeout=t)
             resp.raise_for_status()
             return resp.json()
         except (httpx.ConnectError, httpx.ReadError, httpx.WriteError):
             await self._reset_client()
-            client = self._get_client(timeout)
+            client = self._get_client()
             resp = await client.post(path, json=json or {}, timeout=t)
             resp.raise_for_status()
             return resp.json()
